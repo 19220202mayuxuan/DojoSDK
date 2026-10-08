@@ -4,4 +4,4 @@ huggingface_hub
 pyarrow
 pandas
 datasets
-polars
+polars>=1.36.1,<2.0.0

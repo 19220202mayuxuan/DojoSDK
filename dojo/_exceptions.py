@@ -101,3 +101,17 @@ class OfflineDataNotAvailableError(DojoError):
     """Offline data is not available for the requested endpoint or parameters."""
 
     pass
+
+
+class MaterializationLimitError(DojoError):
+    """A lazy offline query would materialize more rows than its safety limit."""
+
+    def __init__(self, *, limit: int, observed_at_least: int) -> None:
+        super().__init__(
+            f"Offline query exceeds max_materialized_rows={limit}; "
+            f"observed at least {observed_at_least} rows. Add symbol/date filters, "
+            "use a smaller finite limit, or split the query into bounded windows; "
+            "fetch_df() and limit_per_symbol=None do not bypass this safety limit."
+        )
+        self.limit = limit
+        self.observed_at_least = observed_at_least

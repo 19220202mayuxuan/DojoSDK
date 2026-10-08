@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dojosdk"
-version = "0.1.26"
+version = "0.1.29"
 description = "Official Python client SDK for the Dojo API"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 license = "MIT"
 authors = [
     {name = "Dojo SDK Authors"}
@@ -23,7 +23,7 @@ dependencies = [
     "anyio>=3.5.0",
     "pandas",
     "datasets",
-    "polars",
+    "polars>=1.36.1,<2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +38,15 @@ huggingface = [
     "pyarrow>=12.0.0",
     "datasets",
     "modelscope>=1.11.0",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: deterministic tests with no provider, network, or persistent snapshot dependency",
+    "offline_integration: local snapshot, Parquet, and offline datasource integration tests",
+    "online_integration: tests that call a live Dojo API and require explicit credentials",
+    "contract: API schema and cross-component compatibility contract tests",
+    "slow: tests that process large datasets or perform long-running integration work",
 ]
 
 [tool.setuptools.packages.find]

@@ -40,6 +40,9 @@ class HFConfig:
     token: str | None = None
     modelscope_token: str | None = None
     backend: str = "auto"
+    backend_fallback: str = "modelscope"
+    backend_probe_timeout_seconds: float = 3.0
+    backend_probe_ttl_seconds: float = 300.0
     revision: str = "main"
     cache_dir: str = os.path.expanduser("~/.cache/huggingface/hub")
     local_only: bool = False
@@ -47,6 +50,7 @@ class HFConfig:
     download_timeout_seconds: float = 60.0
     etag_timeout_seconds: float = 10.0
     max_download_retries: int = 1
+    snapshot_staging_ttl_seconds: float = 7 * 24 * 60 * 60
 
     @classmethod
     def from_env(cls) -> "HFConfig":
@@ -54,6 +58,15 @@ class HFConfig:
             token=os.environ.get("DOJO_HF_TOKEN"),
             modelscope_token=os.environ.get("DOJO_MODELSCOPE_TOKEN") or os.environ.get("MODELSCOPE_TOKEN"),
             backend=os.environ.get("DOJO_DATA_BACKEND", "auto").lower(),
+            backend_fallback=os.environ.get("DOJO_DATA_BACKEND_FALLBACK", "modelscope").lower(),
+            backend_probe_timeout_seconds=_env_float(
+                "DOJO_BACKEND_PROBE_TIMEOUT",
+                3.0,
+            ),
+            backend_probe_ttl_seconds=_env_float(
+                "DOJO_BACKEND_PROBE_TTL",
+                300.0,
+            ),
             revision=os.environ.get("DOJO_HF_REVISION", "main"),
             cache_dir=os.environ.get("DOJO_CACHE_DIR", os.path.expanduser("~/.cache/huggingface/hub")),
             local_only=_env_bool("DOJO_HF_OFFLINE", False),
@@ -69,6 +82,10 @@ class HFConfig:
             max_download_retries=_env_int(
                 "DOJO_HF_MAX_RETRIES",
                 1,
+            ),
+            snapshot_staging_ttl_seconds=_env_float(
+                "DOJO_SNAPSHOT_STAGING_TTL",
+                7 * 24 * 60 * 60,
             ),
         )
 
