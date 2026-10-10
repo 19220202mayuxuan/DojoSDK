@@ -1,6 +1,12 @@
 from __future__ import annotations
+from datetime import datetime
 from typing import Any, List, Literal
+import warnings
+
+import anyio
 import pandas as pd
+from dojo._compat import model_dump
+from dojo._exceptions import OfflineDataNotAvailableError
 from dojo.resources.base import AsyncAPIResource, SyncAPIResource, normalize_naive_iso_datetime
 from dojo.types.models import (
     CompetitorsResponse,
@@ -14,6 +20,7 @@ from dojo.types.models import (
     YStockInfoResponse,
     StockKlineResponse,
     StockKlineResponseItem,
+    KlineBatchResult,
     StockKlineCSResponse,
     StockMarketSummaryResponse,
     StockSectorIndustrySummaryResponse,
@@ -427,6 +434,39 @@ class Stocks(SyncAPIResource):
 
     list = get_ystock_info
 
+    def get_klines(
+        self,
+        symbols: list[str],
+        *,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        fields: list[str] | None = None,
+        limit_per_symbol: int | None = None,
+        adjust: str | None = None,
+        kline_t: str | None = None,
+        adjustment_reference_date: datetime | None = None,
+    ) -> KlineBatchResult:
+        """Query a batch from one immutable local K-line snapshot.
+
+        The returned metadata identifies the exact snapshot used by this
+        query. This API is therefore available only in offline snapshot mode.
+        """
+        data_source = getattr(self._client, "_data_source", None)
+        if self._client.online or data_source is None or not hasattr(data_source, "get_klines"):
+            raise OfflineDataNotAvailableError(
+                "get_klines() requires the offline snapshot data source"
+            )
+        return data_source.get_klines(
+            symbols,
+            start=start,
+            end=end,
+            fields=fields,
+            limit_per_symbol=limit_per_symbol,
+            adjust=adjust,
+            kline_t=kline_t,
+            adjustment_reference_date=adjustment_reference_date,
+        )
+
     def get_kline(
         self,
         *,
@@ -457,6 +497,33 @@ class Stocks(SyncAPIResource):
         limit : int, optional
             Maximum records per symbol.
         """
+        data_source = getattr(self._client, "_data_source", None)
+        if (
+            not self._is_raw
+            and not self._client.online
+            and data_source is not None
+            and hasattr(data_source, "get_klines")
+        ):
+            warnings.warn(
+                "Offline Stocks.get_kline() is deprecated; use get_klines() for snapshot-aware batch queries.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            symbols = [part.strip() for part in symbol.split(",") if part.strip()]
+            batch = self.get_klines(
+                symbols,
+                start=start_time,
+                end=end_time,
+                limit_per_symbol=limit,
+                adjust=price_adj_type,
+                kline_t=kline_t,
+                adjustment_reference_date=price_adj_date,
+            )
+            response = StockKlineResponse(total_num=len(batch.rows), data=batch.rows)
+            if getattr(self._client, "return_raw_data", False):
+                return model_dump(response, exclude_unset=True)  # type: ignore[return-value]
+            return response
+
         params: dict[str, Any] = {"symbol": symbol}
         if kline_t is not None:
             params["kline_t"] = kline_t
@@ -478,28 +545,43 @@ class Stocks(SyncAPIResource):
 
     kline = get_kline
 
-    def get_all_klines(self, *, symbols: List[str] | None = None) -> List[StockKlineResponseItem]:
-        """Retrieves offline stock K-line data.
+    def get_all_klines(
+        self,
+        *,
+        symbols: List[str] | None = None,
+        limit_per_symbol: int | None = None,
+    ) -> List[StockKlineResponseItem]:
+        """Deprecated compatibility wrapper for an explicitly bounded symbol set."""
+        warnings.warn(
+            "get_all_klines() no longer supports full-market loading; use get_klines().",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if not symbols:
+            raise ValueError("symbols must be provided; unbounded full-market K-line loading is disabled")
+        return list(
+            self.get_klines(
+                symbols,
+                limit_per_symbol=limit_per_symbol,
+            ).rows
+        )
 
-        This method fetches directly from the offline dataset.
-        If `symbols` is provided, it filters the data. Otherwise, it returns the complete dataset.
-        Returns a flat list of K-line data.
-        """
-        params = {}
-        if symbols:
-            params["symbol"] = ",".join(symbols)
-
-        raw_response = self._client._data_source.fetch(method="GET", path="/api/qdata/v1/stock/kline", params=params)["data"]
-        response = StockKlineResponse.model_validate(raw_response)
-
-        return response.data
-
-    def get_all_klines_with_df(self) -> "pd.DataFrame":  # type: ignore
-        """Retrieves offline stock K-line data directly as a pandas DataFrame.
-
-        This method leverages the data source to fetch and cache a Pandas DataFrame.
-        """
-        return self._client._data_source.fetch_df(path="/api/qdata/v1/stock/kline")
+    def get_all_klines_with_df(
+        self,
+        *,
+        symbols: List[str] | None = None,
+        limit_per_symbol: int | None = None,
+    ) -> "pd.DataFrame":  # type: ignore
+        """Deprecated DataFrame wrapper for an explicitly bounded symbol set."""
+        warnings.warn(
+            "get_all_klines_with_df() no longer supports full-market loading; use get_klines().",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if not symbols:
+            raise ValueError("symbols must be provided; unbounded full-market K-line loading is disabled")
+        rows = self.get_klines(symbols, limit_per_symbol=limit_per_symbol).rows
+        return pd.DataFrame.from_records([model_dump(row, exclude_unset=True) for row in rows])
 
     def get_kline_cs(
         self,
@@ -1226,6 +1308,37 @@ class AsyncStocks(AsyncAPIResource):
 
     list = get_ystock_info
 
+    async def get_klines(
+        self,
+        symbols: list[str],
+        *,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        fields: list[str] | None = None,
+        limit_per_symbol: int | None = None,
+        adjust: str | None = None,
+        kline_t: str | None = None,
+        adjustment_reference_date: datetime | None = None,
+    ) -> KlineBatchResult:
+        """Asynchronously query one immutable local K-line snapshot."""
+        data_source = getattr(self._client, "_data_source", None)
+        if self._client.online or data_source is None or not hasattr(data_source, "get_klines"):
+            raise OfflineDataNotAvailableError(
+                "get_klines() requires the offline snapshot data source"
+            )
+        return await anyio.to_thread.run_sync(
+            lambda: data_source.get_klines(
+                symbols,
+                start=start,
+                end=end,
+                fields=fields,
+                limit_per_symbol=limit_per_symbol,
+                adjust=adjust,
+                kline_t=kline_t,
+                adjustment_reference_date=adjustment_reference_date,
+            )
+        )
+
     async def get_kline(
         self,
         *,
@@ -1256,6 +1369,33 @@ class AsyncStocks(AsyncAPIResource):
         limit : int, optional
             Maximum records per symbol.
         """
+        data_source = getattr(self._client, "_data_source", None)
+        if (
+            not self._is_raw
+            and not self._client.online
+            and data_source is not None
+            and hasattr(data_source, "get_klines")
+        ):
+            warnings.warn(
+                "Offline AsyncStocks.get_kline() is deprecated; use get_klines() for snapshot-aware batch queries.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            symbols = [part.strip() for part in symbol.split(",") if part.strip()]
+            batch = await self.get_klines(
+                symbols,
+                start=start_time,
+                end=end_time,
+                limit_per_symbol=limit,
+                adjust=price_adj_type,
+                kline_t=kline_t,
+                adjustment_reference_date=price_adj_date,
+            )
+            response = StockKlineResponse(total_num=len(batch.rows), data=batch.rows)
+            if getattr(self._client, "return_raw_data", False):
+                return model_dump(response, exclude_unset=True)  # type: ignore[return-value]
+            return response
+
         params: dict[str, Any] = {"symbol": symbol}
         if kline_t is not None:
             params["kline_t"] = kline_t
@@ -1277,39 +1417,45 @@ class AsyncStocks(AsyncAPIResource):
 
     kline = get_kline
 
-    async def get_all_klines(self, *, symbols: List[str] | None = None) -> List[StockKlineResponseItem]:
-        """Retrieves offline stock K-line data asynchronously.
-
-        This method fetches directly from the offline dataset.
-        If `symbols` is provided, it filters the data. Otherwise, it returns the complete dataset.
-        Returns a flat list of K-line data.
-        """
-        params = {}
-        if symbols:
-            params["symbol"] = ",".join(symbols)
-
-        # Force offline fetch
-        import anyio
-
-        raw_response = await anyio.to_thread.run_sync(
-            lambda: self._client._data_source.fetch(
-                method="GET",
-                path="/api/qdata/v1/stock/kline",
-                params=params,
-            )
+    async def get_all_klines(
+        self,
+        *,
+        symbols: List[str] | None = None,
+        limit_per_symbol: int | None = None,
+    ) -> List[StockKlineResponseItem]:
+        """Deprecated compatibility wrapper for an explicitly bounded symbol set."""
+        warnings.warn(
+            "get_all_klines() no longer supports full-market loading; use get_klines().",
+            DeprecationWarning,
+            stacklevel=2,
         )
-        response = StockKlineResponse.model_validate(raw_response["data"])
+        if not symbols:
+            raise ValueError("symbols must be provided; unbounded full-market K-line loading is disabled")
+        return list(
+            (
+                await self.get_klines(
+                    symbols,
+                    limit_per_symbol=limit_per_symbol,
+                )
+            ).rows
+        )
 
-        return response.data
-
-    async def get_all_klines_with_df(self) -> "pd.DataFrame":  # type: ignore
-        """Retrieves offline stock K-line data directly as a pandas DataFrame asynchronously.
-
-        This method leverages the data source to fetch and cache a Pandas DataFrame.
-        """
-        import anyio
-
-        return await anyio.to_thread.run_sync(lambda: self._client._data_source.fetch_df(path="/api/qdata/v1/stock/kline"))
+    async def get_all_klines_with_df(
+        self,
+        *,
+        symbols: List[str] | None = None,
+        limit_per_symbol: int | None = None,
+    ) -> "pd.DataFrame":  # type: ignore
+        """Deprecated DataFrame wrapper for an explicitly bounded symbol set."""
+        warnings.warn(
+            "get_all_klines_with_df() no longer supports full-market loading; use get_klines().",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        if not symbols:
+            raise ValueError("symbols must be provided; unbounded full-market K-line loading is disabled")
+        rows = (await self.get_klines(symbols, limit_per_symbol=limit_per_symbol)).rows
+        return pd.DataFrame.from_records([model_dump(row, exclude_unset=True) for row in rows])
 
     async def get_kline_cs(
         self,

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import os
+import warnings
 from typing import Mapping, Union, TYPE_CHECKING
 from functools import cached_property
 import httpx
 
 if TYPE_CHECKING:
+    from dojo.datasource.config import HFConfig
     from dojo.resources.stocks import Stocks
     from dojo.resources.market_data import MarketData, Indices, Instruments
     from dojo.resources.macro import Macro
@@ -20,7 +22,8 @@ if TYPE_CHECKING:
     from dojo.resources.analysis import Analysis
 
 from dojo.client.base import SyncAPIClient
-from dojo._exceptions import DojoError
+from dojo._exceptions import DojoError, OfflineDataNotAvailableError
+from dojo.types.snapshot import SnapshotGCResult, SnapshotRef, SnapshotSyncResult
 
 
 class Dojo(SyncAPIClient):
@@ -37,6 +40,8 @@ class Dojo(SyncAPIClient):
         default_headers: Mapping[str, str] | None = None,
         default_query: Mapping[str, object] | None = None,
         return_raw_data: bool = True,
+        online: bool | None = None,
+        offline_config: HFConfig | None = None,
     ) -> None:
         """Constructs a new synchronous Dojo client instance.
 
@@ -60,11 +65,15 @@ class Dojo(SyncAPIClient):
         return_raw_data : bool, default True
             If True, API responses are returned as native Python dictionaries/lists,
             skipping Pydantic model validation.
+        online : bool, optional
+            Explicitly select online mode. When omitted, DOJO_ONLINE is used.
+        offline_config : HFConfig, optional
+            Explicit offline datasource settings used when online is False.
         """
         from dojo.datasource.config import is_online, HFConfig
         from dojo.datasource.huggingface import HuggingFaceKlineDataSource
 
-        self._online = is_online()
+        self._online = is_online() if online is None else bool(online)
 
         api_key = api_key or os.environ.get("DOJO_API_KEY")
         if self._online and not api_key:
@@ -73,7 +82,7 @@ class Dojo(SyncAPIClient):
 
         self._data_source = None
         if not self._online:
-            hf_config = HFConfig.from_env()
+            hf_config = offline_config or HFConfig.from_env()
             if "DOJO_HF_DOWNLOAD_TIMEOUT" not in os.environ:
                 timeout_seconds = float(timeout) if isinstance(timeout, (int, float)) else timeout.read
                 if timeout_seconds is not None and timeout_seconds > 0:
@@ -137,13 +146,68 @@ class Dojo(SyncAPIClient):
             cancel()
 
     def preload_offline_data(self, paths: list[str] | None = None) -> None:
-        """Preload specific offline data resources into memory to avoid latency on first request."""
+        """Deprecated compatibility wrapper; use ensure_offline_snapshots()."""
+        warnings.warn(
+            "preload_offline_data() is deprecated and will be removed in the next "
+            "DojoSDK major release; use ensure_offline_snapshots(paths=...).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if self._data_source is not None and hasattr(self._data_source, "preload"):
             if paths is None:
                 from dojo.datasource.registry import HF_REGISTRY
 
                 paths = list(HF_REGISTRY.keys())
             self._data_source.preload(paths)
+
+    def ensure_offline_snapshots(
+        self,
+        *,
+        paths: list[str] | None = None,
+        repos: list[str] | None = None,
+    ) -> list[SnapshotRef]:
+        """Ensure explicitly selected offline snapshots exist locally."""
+        if self._data_source is None:
+            raise OfflineDataNotAvailableError("Snapshot synchronization is only available in offline mode.")
+        return self._data_source.ensure_offline_snapshots(paths=paths, repos=repos)
+
+    def sync_offline_snapshots(
+        self,
+        *,
+        paths: list[str] | None = None,
+        repos: list[str] | None = None,
+        check_remote: bool = True,
+        force: bool = False,
+    ) -> SnapshotSyncResult:
+        """Synchronize explicitly selected repositories with atomic publication."""
+        if self._data_source is None:
+            raise OfflineDataNotAvailableError("Snapshot synchronization is only available in offline mode.")
+        return self._data_source.sync_offline_snapshots(
+            paths=paths,
+            repos=repos,
+            check_remote=check_remote,
+            force=force,
+        )
+
+    def gc_offline_snapshots(
+        self,
+        *,
+        paths: list[str] | None = None,
+        repos: list[str] | None = None,
+        min_age_seconds: float = 7 * 24 * 60 * 60,
+        keep_previous: int = 1,
+        dry_run: bool = True,
+    ) -> SnapshotGCResult:
+        """Preview or run conservative cleanup of selected snapshot revisions."""
+        if self._data_source is None:
+            raise OfflineDataNotAvailableError("Snapshot cleanup is only available in offline mode.")
+        return self._data_source.gc_offline_snapshots(
+            paths=paths,
+            repos=repos,
+            min_age_seconds=min_age_seconds,
+            keep_previous=keep_previous,
+            dry_run=dry_run,
+        )
 
     def upload_dataset(self, dataset_name: str, local_folder: str, token: str | None = None) -> None:
         """Uploads a local folder as a dataset to HuggingFace Hub."""

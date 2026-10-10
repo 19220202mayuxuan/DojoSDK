@@ -4,6 +4,7 @@ from datetime import date
 from typing import Any, Dict, List, Literal
 from pydantic import BaseModel, ConfigDict, Field
 from dojo._compat import PYDANTIC_V1
+from dojo.types.snapshot import SnapshotMetadata
 
 
 class DojoModel(BaseModel):
@@ -317,6 +318,15 @@ class StockKlineResponseItem(DojoModel):
     adj_factor_cum: float | None = 1.0
     dividends: float | None = None
     splits: float | None = None
+
+
+class Kline(StockKlineResponseItem):
+    """One stock K-line row returned by the snapshot-aware batch API."""
+
+
+class KlineBatchResult(DojoModel):
+    rows: List[Kline]
+    snapshot: SnapshotMetadata
 
 
 class StockKlineResponse(DojoModel):

@@ -14,11 +14,16 @@ def cleanup_ms_snapshots(snapshots_dir, current_commit):
             print(f"Cleaned up old modelscope revision: {c}")
 
 
-# Create dummy dirs
-os.makedirs("dummy_repo/snapshots/commit1", exist_ok=True)
-os.makedirs("dummy_repo/snapshots/commit2", exist_ok=True)
-try:
-    cleanup_ms_snapshots("dummy_repo/snapshots", "commit2")
-    print("Remaining:", os.listdir("dummy_repo/snapshots"))
-finally:
-    shutil.rmtree("dummy_repo", ignore_errors=True)
+def main() -> None:
+    # Create dummy dirs only when this integration script is invoked directly.
+    os.makedirs("dummy_repo/snapshots/commit1", exist_ok=True)
+    os.makedirs("dummy_repo/snapshots/commit2", exist_ok=True)
+    try:
+        cleanup_ms_snapshots("dummy_repo/snapshots", "commit2")
+        print("Remaining:", os.listdir("dummy_repo/snapshots"))
+    finally:
+        shutil.rmtree("dummy_repo", ignore_errors=True)
+
+
+if __name__ == "__main__":
+    main()
