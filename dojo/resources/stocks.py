@@ -453,9 +453,7 @@ class Stocks(SyncAPIResource):
         """
         data_source = getattr(self._client, "_data_source", None)
         if self._client.online or data_source is None or not hasattr(data_source, "get_klines"):
-            raise OfflineDataNotAvailableError(
-                "get_klines() requires the offline snapshot data source"
-            )
+            raise OfflineDataNotAvailableError("get_klines() requires the offline snapshot data source")
         return data_source.get_klines(
             symbols,
             start=start,
@@ -470,7 +468,7 @@ class Stocks(SyncAPIResource):
     def get_kline(
         self,
         *,
-        symbol: str,
+        symbol: str | List[str],
         kline_t: str | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
@@ -482,8 +480,8 @@ class Stocks(SyncAPIResource):
 
         Parameters
         ----------
-        symbol : str
-            Target stock ticker or comma-separated tickers (up to 100 symbols; for example, ``AAPL,MSFT``).
+        symbol : str or list of str
+            Target stock ticker, list of tickers, or comma-separated tickers (up to 100 symbols; for example, ``AAPL,MSFT`` or ``["AAPL", "MSFT"]``).
         kline_t : str, optional
             Bar interval duration.
         start_time : str, optional
@@ -497,19 +495,15 @@ class Stocks(SyncAPIResource):
         limit : int, optional
             Maximum records per symbol.
         """
+        symbol_val = ",".join(symbol) if isinstance(symbol, (list, tuple, set)) else symbol
         data_source = getattr(self._client, "_data_source", None)
-        if (
-            not self._is_raw
-            and not self._client.online
-            and data_source is not None
-            and hasattr(data_source, "get_klines")
-        ):
+        if not self._is_raw and not self._client.online and data_source is not None and hasattr(data_source, "get_klines"):
             warnings.warn(
                 "Offline Stocks.get_kline() is deprecated; use get_klines() for snapshot-aware batch queries.",
                 DeprecationWarning,
                 stacklevel=2,
             )
-            symbols = [part.strip() for part in symbol.split(",") if part.strip()]
+            symbols = [part.strip() for part in symbol_val.split(",") if part.strip()]
             batch = self.get_klines(
                 symbols,
                 start=start_time,
@@ -524,7 +518,7 @@ class Stocks(SyncAPIResource):
                 return model_dump(response, exclude_unset=True)  # type: ignore[return-value]
             return response
 
-        params: dict[str, Any] = {"symbol": symbol}
+        params: dict[str, Any] = {"symbol": symbol_val}
         if kline_t is not None:
             params["kline_t"] = kline_t
         if start_time is not None:
@@ -799,7 +793,7 @@ class Stocks(SyncAPIResource):
     def get_fin_indicators(
         self,
         *,
-        symbol: str,
+        symbol: str | List[str] | None = None,
         report_type: str | None = None,
         end_date: str | None = None,
         public_date: str | None = None,
@@ -809,16 +803,21 @@ class Stocks(SyncAPIResource):
 
         Parameters
         ----------
-        symbol : str
-            Target stock ticker symbol.
+        symbol : str or list of str, optional
+            Target stock ticker symbol, list of tickers, or comma-separated tickers.
         report_type : str, optional
             Financial report type filter.
         end_date : str, optional
             ISO-8601 end date.
+        public_date : str, optional
+            Announcement release date filter.
         limit : int, optional
             Max records.
         """
-        params: dict[str, Any] = {"symbol": symbol}
+        params: dict[str, Any] = {}
+        if symbol is not None:
+            symbol_val = ",".join(symbol) if isinstance(symbol, (list, tuple, set)) else symbol
+            params["symbol"] = symbol_val
         if report_type is not None:
             params["report_type"] = report_type
         if end_date is not None:
@@ -1323,9 +1322,7 @@ class AsyncStocks(AsyncAPIResource):
         """Asynchronously query one immutable local K-line snapshot."""
         data_source = getattr(self._client, "_data_source", None)
         if self._client.online or data_source is None or not hasattr(data_source, "get_klines"):
-            raise OfflineDataNotAvailableError(
-                "get_klines() requires the offline snapshot data source"
-            )
+            raise OfflineDataNotAvailableError("get_klines() requires the offline snapshot data source")
         return await anyio.to_thread.run_sync(
             lambda: data_source.get_klines(
                 symbols,
@@ -1342,7 +1339,7 @@ class AsyncStocks(AsyncAPIResource):
     async def get_kline(
         self,
         *,
-        symbol: str,
+        symbol: str | List[str],
         kline_t: str | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
@@ -1354,8 +1351,8 @@ class AsyncStocks(AsyncAPIResource):
 
         Parameters
         ----------
-        symbol : str
-            Target stock ticker or comma-separated tickers (up to 100 symbols; for example, ``AAPL,MSFT``).
+        symbol : str or list of str
+            Target stock ticker, list of tickers, or comma-separated tickers (up to 100 symbols; for example, ``AAPL,MSFT`` or ``["AAPL", "MSFT"]``).
         kline_t : str, optional
             Bar interval duration.
         start_time : str, optional
@@ -1369,19 +1366,15 @@ class AsyncStocks(AsyncAPIResource):
         limit : int, optional
             Maximum records per symbol.
         """
+        symbol_val = ",".join(symbol) if isinstance(symbol, (list, tuple, set)) else symbol
         data_source = getattr(self._client, "_data_source", None)
-        if (
-            not self._is_raw
-            and not self._client.online
-            and data_source is not None
-            and hasattr(data_source, "get_klines")
-        ):
+        if not self._is_raw and not self._client.online and data_source is not None and hasattr(data_source, "get_klines"):
             warnings.warn(
                 "Offline AsyncStocks.get_kline() is deprecated; use get_klines() for snapshot-aware batch queries.",
                 DeprecationWarning,
                 stacklevel=2,
             )
-            symbols = [part.strip() for part in symbol.split(",") if part.strip()]
+            symbols = [part.strip() for part in symbol_val.split(",") if part.strip()]
             batch = await self.get_klines(
                 symbols,
                 start=start_time,
@@ -1396,7 +1389,7 @@ class AsyncStocks(AsyncAPIResource):
                 return model_dump(response, exclude_unset=True)  # type: ignore[return-value]
             return response
 
-        params: dict[str, Any] = {"symbol": symbol}
+        params: dict[str, Any] = {"symbol": symbol_val}
         if kline_t is not None:
             params["kline_t"] = kline_t
         if start_time is not None:
@@ -1673,7 +1666,7 @@ class AsyncStocks(AsyncAPIResource):
     async def get_fin_indicators(
         self,
         *,
-        symbol: str,
+        symbol: str | List[str] | None = None,
         report_type: str | None = None,
         end_date: str | None = None,
         public_date: str | None = None,
@@ -1683,16 +1676,21 @@ class AsyncStocks(AsyncAPIResource):
 
         Parameters
         ----------
-        symbol : str
-            Target stock ticker symbol.
+        symbol : str or list of str, optional
+            Target stock ticker symbol, list of tickers, or comma-separated tickers.
         report_type : str, optional
             Financial report type filter.
         end_date : str, optional
             ISO-8601 end date.
+        public_date : str, optional
+            Announcement release date filter.
         limit : int, optional
             Max records.
         """
-        params: dict[str, Any] = {"symbol": symbol}
+        params: dict[str, Any] = {}
+        if symbol is not None:
+            symbol_val = ",".join(symbol) if isinstance(symbol, (list, tuple, set)) else symbol
+            params["symbol"] = symbol_val
         if report_type is not None:
             params["report_type"] = report_type
         if end_date is not None:

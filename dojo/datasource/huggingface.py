@@ -139,9 +139,7 @@ class HuggingFaceDataSource:
         for snapshot_file in snapshot.files:
             if snapshot_file.relative_path == relative_path:
                 return str(snapshot_file.local_path)
-        raise OfflineDataNotAvailableError(
-            f"Snapshot {snapshot.repo_id}@{snapshot.resolved_revision} is missing {relative_path}"
-        )
+        raise OfflineDataNotAvailableError(f"Snapshot {snapshot.repo_id}@{snapshot.resolved_revision} is missing {relative_path}")
 
     def ensure_offline_snapshots(
         self,
@@ -386,15 +384,11 @@ class HuggingFaceAttributionFactorDataSource(HuggingFaceDataSource):
             merged.update(json)
 
         target_levels = self._normalize_scope_levels(merged.get("scope"))
-        attribution_snapshot = self._snapshot_resolver.ensure_offline_snapshots(
-            paths=[self._ATTRIBUTION_PATH]
-        )[0]
+        attribution_snapshot = self._snapshot_resolver.ensure_offline_snapshots(paths=[self._ATTRIBUTION_PATH])[0]
         sector_snapshot = None
         if target_levels:
             try:
-                sector_snapshot = self._snapshot_resolver.ensure_offline_snapshots(
-                    paths=[self._SECTOR_INFO_PATH]
-                )[0]
+                sector_snapshot = self._snapshot_resolver.ensure_offline_snapshots(paths=[self._SECTOR_INFO_PATH])[0]
             except Exception as error:
                 # Preserve the previous compatibility rule: an unavailable
                 # taxonomy table must not hide otherwise valid attribution data.
@@ -426,19 +420,11 @@ class HuggingFaceAttributionFactorDataSource(HuggingFaceDataSource):
             except Exception as error:
                 logger.warning(f"Failed to filter by scope using sector_info: {error}")
 
-        query_params = {
-            key: value
-            for key, value in merged.items()
-            if key not in {"sector_id", "sector_id_list", "scope"}
-        }
+        query_params = {key: value for key, value in merged.items() if key not in {"sector_id", "sector_id_list", "scope"}}
         schema = dict(canonical.collect_schema())
         query = QueryBuilder(spec, schema).build(query_params)
         public_columns = tuple(column for column in schema if column != "sector_id_list")
-        output_columns = (
-            public_columns
-            if query.output_columns is None
-            else tuple(column for column in query.output_columns if column != "sector_id_list")
-        )
+        output_columns = public_columns if query.output_columns is None else tuple(column for column in query.output_columns if column != "sector_id_list")
         query = query.model_copy(update={"output_columns": output_columns})
         rows = self._query_engine.execute_lazy_frame(
             canonical,
@@ -469,9 +455,7 @@ class HuggingFaceAttributionFactorDataSource(HuggingFaceDataSource):
         if cached is not None:
             return cached.lazy()
         lazy_frame = lazy_frame_factory()
-        candidate = self._query_engine.collect_frame(
-            lazy_frame.limit(self._small_table_cache.max_rows + 1)
-        )
+        candidate = self._query_engine.collect_frame(lazy_frame.limit(self._small_table_cache.max_rows + 1))
         if candidate.height <= self._small_table_cache.max_rows and self._small_table_cache.put(key, candidate):
             return candidate.lazy()
         return lazy_frame
@@ -492,9 +476,7 @@ class HuggingFaceAttributionFactorDataSource(HuggingFaceDataSource):
                 return pl.lit(None, dtype=pl.String)
             text = pl.col(column).cast(pl.String).str.strip_chars()
             parts = text.str.split("/")
-            valid = (parts.list.len() == 3) & parts.list.eval(
-                pl.element().str.len_chars() > 0
-            ).list.all()
+            valid = (parts.list.len() == 3) & parts.list.eval(pl.element().str.len_chars() > 0).list.all()
             return pl.when(valid).then(text).otherwise(None)
 
         canonical_ref = pl.coalesce(
@@ -504,14 +486,7 @@ class HuggingFaceAttributionFactorDataSource(HuggingFaceDataSource):
         return lazy_frame.with_columns(canonical_ref.alias("sector_ref")).with_columns(
             pl.when(pl.col("sector_ref").is_not_null())
             .then(
-                pl.col("sector_ref")
-                .str.split("/")
-                .list.eval(
-                    pl.when(pl.element().str.strip_chars() != "")
-                    .then(pl.element().str.strip_chars())
-                    .otherwise(None)
-                )
-                .list.drop_nulls()
+                pl.col("sector_ref").str.split("/").list.eval(pl.when(pl.element().str.strip_chars() != "").then(pl.element().str.strip_chars()).otherwise(None)).list.drop_nulls()
             )
             .otherwise(pl.lit([], dtype=pl.List(pl.String)))
             .alias("sector_id_list")
@@ -547,11 +522,7 @@ class HuggingFaceAttributionFactorDataSource(HuggingFaceDataSource):
 
     @staticmethod
     def _filter_sector_intersection(lazy_frame: pl.LazyFrame, targets: set[str]) -> pl.LazyFrame:
-        return lazy_frame.filter(
-            pl.col("sector_id_list")
-            .list.eval(pl.element().is_in(sorted(targets)))
-            .list.any()
-        )
+        return lazy_frame.filter(pl.col("sector_id_list").list.eval(pl.element().is_in(sorted(targets))).list.any())
 
     @staticmethod
     def _normalize_sector_targets(value: Any) -> set[str]:
@@ -561,12 +532,7 @@ class HuggingFaceAttributionFactorDataSource(HuggingFaceDataSource):
             values = value
         else:
             return set()
-        return {
-            part.strip()
-            for item in values
-            for part in str(item).replace(",", "/").split("/")
-            if part.strip()
-        }
+        return {part.strip() for item in values for part in str(item).replace(",", "/").split("/") if part.strip()}
 
     @staticmethod
     def _normalize_scope_levels(value: Any) -> set[int]:
@@ -609,6 +575,41 @@ class StockDataSource(HuggingFaceAttributionFactorDataSource):
                     ticker_val = symbols_val
                 params["ticker"] = ticker_val
 
+        if path == "/api/qdata/v1/stock/fin_indicators":
+            symbols_val = params.get("symbol")
+            if symbols_val is None and isinstance(json, dict):
+                symbols_val = json.get("symbol")
+
+            is_multi = False
+            req_symbols: list[str] = []
+            if symbols_val is not None:
+                if isinstance(symbols_val, (list, tuple, set)):
+                    req_symbols = [str(s) for s in symbols_val]
+                    is_multi = len(req_symbols) > 1
+                elif isinstance(symbols_val, str) and "," in symbols_val:
+                    req_symbols = [s.strip() for s in symbols_val.split(",") if s.strip()]
+                    is_multi = True
+
+            if is_multi:
+                fetch_params = dict(params)
+                limit_val = fetch_params.pop("limit", None)
+                res = super().fetch(method=method, path=path, params=fetch_params, json=json)
+                if isinstance(res, dict) and isinstance(res.get("data"), dict):
+                    raw_rows = res["data"].get("data", [])
+                    if isinstance(raw_rows, list):
+                        grouped: dict[str, list[dict]] = {s: [] for s in req_symbols}
+                        for row in raw_rows:
+                            sym = row.get("symbol")
+                            if sym in grouped:
+                                if limit_val is not None and isinstance(limit_val, int) and limit_val > 0:
+                                    if len(grouped[sym]) >= limit_val:
+                                        continue
+                                row_copy = dict(row)
+                                row_copy.pop("symbol", None)
+                                grouped[sym].append(row_copy)
+                        res["data"] = {"total_num": len(grouped), "data": grouped}
+                return res
+
         return super().fetch(method=method, path=path, params=params, json=json)
 
 
@@ -640,13 +641,7 @@ class HuggingFaceKlineDataSource(StockDataSource):
         if spec is None or spec.symbol_field is None or spec.time_field is None:
             raise OfflineDataNotAvailableError("Stock K-line endpoint is not configured for offline queries")
 
-        normalized_symbols = list(
-            dict.fromkeys(
-                symbol.strip()
-                for symbol in symbols
-                if isinstance(symbol, str) and symbol.strip()
-            )
-        )
+        normalized_symbols = list(dict.fromkeys(symbol.strip() for symbol in symbols if isinstance(symbol, str) and symbol.strip()))
         if not normalized_symbols:
             raise ValueError("symbols must contain at least one non-empty symbol")
         if limit_per_symbol is not None and limit_per_symbol < 0:
@@ -683,10 +678,7 @@ class HuggingFaceKlineDataSource(StockDataSource):
         adjustment_reference_date: Any | None,
     ) -> KlineBatchResult:
         relative_paths = self._kline_partition_paths(snapshot, spec, symbols)
-        parquet_paths = [
-            self._snapshot_parquet_path(snapshot, relative_path)
-            for relative_path in relative_paths
-        ]
+        parquet_paths = [self._snapshot_parquet_path(snapshot, relative_path) for relative_path in relative_paths]
         source = pl.scan_parquet(parquet_paths)
         schema = dict(source.collect_schema())
 
@@ -697,14 +689,18 @@ class HuggingFaceKlineDataSource(StockDataSource):
             filter_params[spec.start_param] = start
         if end is not None:
             filter_params[spec.end_param] = end
-        filter_query = QueryBuilder(spec, schema).build(filter_params).model_copy(
-            update={
-                "sort_fields": (),
-                "sort_descending": (),
-                "output_columns": None,
-                "limit": None,
-                "offset": 0,
-            }
+        filter_query = (
+            QueryBuilder(spec, schema)
+            .build(filter_params)
+            .model_copy(
+                update={
+                    "sort_fields": (),
+                    "sort_descending": (),
+                    "output_columns": None,
+                    "limit": None,
+                    "offset": 0,
+                }
+            )
         )
         lazy_frame = self._query_engine.apply_query(source, filter_query)
 
@@ -715,14 +711,18 @@ class HuggingFaceKlineDataSource(StockDataSource):
                 reference_params["kline_t"] = kline_t
             if adjustment_reference_date is not None:
                 reference_params[spec.end_param] = adjustment_reference_date
-            reference_query = QueryBuilder(spec, schema).build(reference_params).model_copy(
-                update={
-                    "sort_fields": (),
-                    "sort_descending": (),
-                    "output_columns": None,
-                    "limit": None,
-                    "offset": 0,
-                }
+            reference_query = (
+                QueryBuilder(spec, schema)
+                .build(reference_params)
+                .model_copy(
+                    update={
+                        "sort_fields": (),
+                        "sort_descending": (),
+                        "output_columns": None,
+                        "limit": None,
+                        "offset": 0,
+                    }
+                )
             )
             reference_source = self._query_engine.apply_query(source, reference_query)
             lazy_frame = self._apply_kline_adjustment(
@@ -744,10 +744,7 @@ class HuggingFaceKlineDataSource(StockDataSource):
                 [spec.symbol_field, spec.time_field],
                 descending=[False, True],
                 maintain_order=True,
-            ).filter(
-                pl.col(spec.symbol_field).cum_count().over(spec.symbol_field)
-                <= limit_per_symbol
-            )
+            ).filter(pl.col(spec.symbol_field).cum_count().over(spec.symbol_field) <= limit_per_symbol)
         lazy_frame = lazy_frame.sort(
             [spec.symbol_field, spec.time_field],
             descending=[False, False],
@@ -785,31 +782,19 @@ class HuggingFaceKlineDataSource(StockDataSource):
             return [HuggingFaceDataSource._render_template(spec.path_template, {})]
 
         try:
-            manifest = json_module.loads(
-                available[manifest_name].local_path.read_text(encoding="utf-8")
-            )
+            manifest = json_module.loads(available[manifest_name].local_path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError) as error:
-            raise OfflineDataNotAvailableError(
-                f"Invalid K-line partition manifest {manifest_name}: {error}"
-            ) from error
+            raise OfflineDataNotAvailableError(f"Invalid K-line partition manifest {manifest_name}: {error}") from error
         if not isinstance(manifest, dict) or manifest.get("layout_version") != 1:
-            raise OfflineDataNotAvailableError(
-                "Unsupported K-line partition manifest layout_version"
-            )
+            raise OfflineDataNotAvailableError("Unsupported K-line partition manifest layout_version")
         if manifest.get("hash_algorithm") != "sha256":
-            raise OfflineDataNotAvailableError(
-                "Unsupported K-line partition hash_algorithm"
-            )
+            raise OfflineDataNotAvailableError("Unsupported K-line partition hash_algorithm")
         bucket_count = manifest.get("bucket_count")
         if not isinstance(bucket_count, int) or bucket_count <= 0:
-            raise OfflineDataNotAvailableError(
-                "K-line partition bucket_count must be positive"
-            )
+            raise OfflineDataNotAvailableError("K-line partition bucket_count must be positive")
         normalization = manifest.get("symbol_normalization", "strip_upper")
         if normalization != "strip_upper":
-            raise OfflineDataNotAvailableError(
-                f"Unsupported K-line symbol normalization: {normalization!r}"
-            )
+            raise OfflineDataNotAvailableError(f"Unsupported K-line symbol normalization: {normalization!r}")
 
         target_buckets = {
             int(
@@ -827,9 +812,7 @@ class HuggingFaceKlineDataSource(StockDataSource):
             if match and int(match.group(1)) in target_buckets:
                 selected.append(relative_path)
         if not selected:
-            raise OfflineDataNotAvailableError(
-                f"K-line partition snapshot has no files for buckets {sorted(target_buckets)}"
-            )
+            raise OfflineDataNotAvailableError(f"K-line partition snapshot has no files for buckets {sorted(target_buckets)}")
         return selected
 
     @staticmethod
@@ -878,60 +861,141 @@ class HuggingFaceKlineDataSource(StockDataSource):
         factor = pl.col("adj_factor_cum").cast(pl.Float64).fill_null(1.0)
         reference_factor = pl.col("__dojo_reference_factor").cast(pl.Float64).fill_null(1.0)
         valid_reference = reference_factor != 0
-        price_columns = [
-            column
-            for column in ("open", "high", "low", "close")
-            if column in adjusted.collect_schema()
-        ]
+        price_columns = [column for column in ("open", "high", "low", "close") if column in adjusted.collect_schema()]
         if price_columns:
-            adjusted = adjusted.with_columns([
-                pl.when(valid_reference)
-                .then(pl.col(column) * factor / reference_factor)
-                .otherwise(pl.col(column))
-                .alias(column)
-                for column in price_columns
-            ])
+            adjusted = adjusted.with_columns(
+                [pl.when(valid_reference).then(pl.col(column) * factor / reference_factor).otherwise(pl.col(column)).alias(column) for column in price_columns]
+            )
         return adjusted.drop("__dojo_reference_factor")
 
     def fetch(self, *, method: str, path: str, params: dict[str, Any], json: Any | None = None) -> Any:
         spec = resolve(path)
         if not spec:
             raise OfflineDataNotAvailableError(f"Endpoint {path} is not registered in the HuggingFace offline registry.")
-        if path != self._KLINE_PATH:
-            return super().fetch(method=method, path=path, params=params, json=json)
 
         merged = dict(params)
         if isinstance(json, dict):
             merged.update(json)
 
-        symbol_value = merged.get(spec.symbol_param)
-        if isinstance(symbol_value, str):
-            symbols = [part.strip() for part in symbol_value.split(",") if part.strip()]
-        elif isinstance(symbol_value, (list, tuple, set)):
-            symbols = [str(part).strip() for part in symbol_value if str(part).strip()]
+        if path not in {self._KLINE_PATH, "/api/qdata/v1/benchmark/kline"}:
+            return super().fetch(method=method, path=path, params=merged, json=json)
+
+        import datetime
+        import pandas as pd
+
+        symbol = merged.get(spec.symbol_param)
+        if isinstance(symbol, str):
+            requested_symbols = [part.strip() for part in symbol.split(",") if part.strip()]
+            is_multi_symbol = "," in symbol
+        elif isinstance(symbol, (list, tuple, set)):
+            requested_symbols = [str(part).strip() for part in symbol if str(part).strip()]
+            is_multi_symbol = len(requested_symbols) > 1
+        elif symbol is not None:
+            requested_symbols = [str(symbol).strip()]
+            is_multi_symbol = False
         else:
-            symbols = []
-        batch = self.get_klines(
-            symbols,
-            start=merged.get(spec.start_param),
-            end=merged.get(spec.end_param),
-            fields=merged.get(spec.fields_param) if spec.fields_param else None,
-            limit_per_symbol=merged.get(spec.limit_param),
-            adjust=merged.get("price_adj_type"),
-            kline_t=merged.get("kline_t"),
-            adjustment_reference_date=merged.get("price_adj_date"),
-        )
-        # Preserve the legacy endpoint's field shape: Pydantic defaults that
-        # were absent from the Parquet projection must not appear as new null
-        # keys in the compatibility response.
-        rows = [model_dump(row, exclude_unset=True) for row in batch.rows]
+            requested_symbols = []
+            is_multi_symbol = False
+
+        if path == self._KLINE_PATH:
+            symbols = list(dict.fromkeys(requested_symbols))
+            limit = merged.get(spec.limit_param)
+            offset = merged.get(spec.offset_param)
+            positive_limit = limit if isinstance(limit, int) and limit > 0 else None
+            positive_offset = isinstance(offset, int) and offset > 0
+            batch = self.get_klines(
+                symbols,
+                start=merged.get(spec.start_param),
+                end=merged.get(spec.end_param),
+                fields=merged.get(spec.fields_param) if spec.fields_param else None,
+                limit_per_symbol=positive_limit if not positive_offset else None,
+                adjust=merged.get("price_adj_type"),
+                kline_t=merged.get("kline_t"),
+                adjustment_reference_date=merged.get("price_adj_date"),
+            )
+            df = pd.DataFrame.from_records([model_dump(row, exclude_unset=True) for row in batch.rows])
+        else:
+            ignored = {spec.limit_param, spec.offset_param, spec.fields_param, "index"}
+            fetch_params = {key: value for key, value in merged.items() if key not in ignored}
+            df = self.fetch_df(path=path, params=fetch_params)
+
+        if requested_symbols:
+            if df.index.name in {spec.symbol_field, f"index_{spec.symbol_field}"}:
+                available = [value for value in requested_symbols if value in df.index]
+                df = df.loc[available] if available else df.iloc[:0]
+            elif spec.symbol_field in df.columns:
+                df = df[df[spec.symbol_field].isin(requested_symbols)]
+
+        ignored = {
+            spec.limit_param,
+            spec.offset_param,
+            spec.start_param,
+            spec.end_param,
+            spec.fields_param,
+            spec.symbol_param,
+            "index",
+        }
+        for key, value in merged.items():
+            if key in ignored or value is None or key not in df.columns:
+                continue
+            df = df[df[key].isin(value) if isinstance(value, (list, tuple, set)) else df[key].eq(value)]
+
+        if spec.time_field and spec.time_field in df.columns:
+            if merged.get(spec.start_param) is not None:
+                df = df[df[spec.time_field].ge(merged[spec.start_param])]
+            if merged.get(spec.end_param) is not None:
+                df = df[df[spec.time_field].le(merged[spec.end_param])]
+            df = df.sort_values(spec.time_field, ascending=not spec.order_desc)
+
+        if is_multi_symbol:
+            sym_col = spec.symbol_field
+            grouped_data: dict[str, list[dict]] = {}
+            for sym in requested_symbols:
+                if df.index.name in {sym_col, f"index_{sym_col}"}:
+                    sym_df = df.loc[[sym]] if sym in df.index else df.iloc[:0]
+                elif sym_col in df.columns:
+                    sym_df = df[df[sym_col].eq(sym)]
+                else:
+                    sym_df = df.iloc[:0]
+                offset = merged.get(spec.offset_param)
+                if isinstance(offset, int) and offset > 0:
+                    sym_df = sym_df.iloc[offset:]
+                limit = merged.get(spec.limit_param)
+                if isinstance(limit, int) and limit > 0:
+                    sym_df = sym_df.iloc[:limit]
+                if spec.fields_param and merged.get(spec.fields_param):
+                    fields = [field for field in merged[spec.fields_param] if field in sym_df.columns]
+                    sym_df = sym_df[fields]
+                sym_rows = sym_df.to_dict(orient="records")
+                for row in sym_rows:
+                    row.pop(sym_col, None)
+                    row.pop(f"index_{sym_col}", None)
+                    for key, value in row.items():
+                        if isinstance(value, (datetime.datetime, datetime.date)):
+                            row[key] = value.isoformat()
+                        elif pd.isna(value):
+                            row[key] = None
+                grouped_data[sym] = sym_rows
+            return {"code": 0, "message": "ok", "data": {"total_num": len(grouped_data), "data": grouped_data}}
 
         index = merged.get("index")
         if isinstance(index, int) and not isinstance(index, bool):
-            rows = [rows[index]] if -len(rows) <= index < len(rows) else []
+            df = df.iloc[[index]] if -len(df) <= index < len(df) else df.iloc[:0]
         offset = merged.get(spec.offset_param)
         if isinstance(offset, int) and offset > 0:
-            rows = rows[offset:]
-
+            df = df.iloc[offset:]
+        limit = merged.get(spec.limit_param)
+        if isinstance(limit, int) and limit > 0:
+            df = df.iloc[:limit]
+        if spec.fields_param and merged.get(spec.fields_param):
+            fields = [field for field in merged[spec.fields_param] if field in df.columns]
+            df = df[fields]
+        rows = df.to_dict(orient="records")
+        for row in rows:
+            for key, value in row.items():
+                if isinstance(value, (datetime.datetime, datetime.date)):
+                    row[key] = value.isoformat()
+                elif pd.isna(value):
+                    row[key] = None
         data: Any = {"total_num": len(rows), "data": rows} if spec.envelope == "list" else (rows[0] if rows else {})
         return {"code": 0, "message": "ok", "data": data}
