@@ -1,0 +1,72 @@
+site_name: DojoSDK
+site_description: Quantitative finance data client with online API and offline Parquet snapshot modes.
+docs_dir: docs/site
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+plugins:
+  - search
+  - i18n:
+      docs_structure: folder
+      fallback_to_default: true
+      languages:
+        - locale: zh
+          default: true
+          name: 中文
+          build: true
+          site_name: DojoSDK
+        - locale: en
+          name: English
+          build: true
+          site_name: DojoSDK
+          nav_translations:
+            首页: Home
+            设计: Design
+            Reference: Reference
+            开发: Development
+            计划: Plans
+extra:
+  alternate:
+    - name: 中文
+      link: /
+      lang: zh
+    - name: English
+      link: /en/
+      lang: en
+nav:
+  - 首页: index.md
+  - 设计:
+      - design/index.md
+      - 离线 Parquet 快照: design/offline-snapshots.md
+      - Polars lazy 离线查询: design/polars-lazy-queries.md
+      - S0 兼容性契约: design/offline-s0-compatibility.md
+      - S4 离线数据源重写: design/offline-datasource-s4.md
+      - S5 快照感知的股票 K 线: design/offline-kline-s5.md
+      - Attribution 规范视图与小表缓存: design/attribution-small-table-cache.md
+  - Reference:
+      - reference/index.md
+      - 离线兼容性移除清单: reference/offline-deprecations.md
+  - 开发:
+      - development/index.md
+      - 测试套件: development/testing.md
+  - 计划:
+      - plans/index.md

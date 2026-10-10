@@ -16,7 +16,7 @@ from typing import Any, Hashable, Iterator, Sequence
 
 import pyarrow.parquet as pq
 
-from dojo._exceptions import OfflineDataNotAvailableError
+from dojo._exceptions import OfflineDataNotAvailableError, SnapshotLockTimeoutError
 from dojo.datasource.config import HFConfig
 from dojo.datasource.network import resolve_backend
 from dojo.datasource.registry import HFEndpointSpec, HF_REGISTRY
@@ -1177,38 +1177,96 @@ class SnapshotResolver:
                     continue
         return total
 
-    @staticmethod
     @contextmanager
-    def _repo_process_lock(repo_root: Path) -> Iterator[None]:
-        """Serialize publication, lease acquisition, and GC across processes."""
+    def _repo_process_lock(self, repo_root: Path) -> Iterator[None]:
+        """Serialize publication, lease acquisition, and GC across processes.
+
+        Acquisition is bounded by ``snapshot_lock_timeout_seconds``. Without a
+        deadline a peer that takes this lock and then stalls (for example a
+        snapshot sync blocked on a dead network) freezes every reader in every
+        process forever, because readers need this same lock. ``0`` restores
+        the legacy unbounded wait.
+        """
         repo_root.mkdir(parents=True, exist_ok=True)
         lock_path = repo_root / ".repo.lock"
         handle = lock_path.open("a+b")
+        acquired = False
         try:
-            if os.name == "nt":
-                import msvcrt
-
-                if lock_path.stat().st_size == 0:
-                    handle.write(b"\0")
-                    handle.flush()
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            acquired = self._acquire_repo_process_lock(handle, lock_path)
+            if not acquired:
+                raise SnapshotLockTimeoutError(
+                    path=str(lock_path),
+                    timeout_seconds=self._cfg.snapshot_lock_timeout_seconds,
+                )
             yield
         finally:
-            if os.name == "nt":
-                import msvcrt
+            try:
+                if acquired:
+                    self._unlock_repo_process_handle(handle)
+            finally:
+                handle.close()
 
-                handle.seek(0)
-                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
+    def _acquire_repo_process_lock(self, handle: Any, lock_path: Path) -> bool:
+        """Bounded acquisition of the exclusive repository lock.
 
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
-            handle.close()
+        Returns ``False`` when the deadline expires instead of blocking
+        forever. ``snapshot_lock_timeout_seconds <= 0`` keeps the legacy
+        unbounded wait.
+        """
+        timeout = self._cfg.snapshot_lock_timeout_seconds
+        if timeout <= 0:
+            self._lock_repo_process_handle(handle, lock_path, blocking=True)
+            return True
+
+        deadline = time.monotonic() + timeout
+        interval = 0.05
+        while True:
+            if self._lock_repo_process_handle(handle, lock_path, blocking=False):
+                return True
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(interval, remaining))
+            interval = min(interval * 2, 0.5)
+
+    @staticmethod
+    def _lock_repo_process_handle(handle: Any, lock_path: Path, *, blocking: bool) -> bool:
+        """Take the exclusive repository lock; ``False`` when it is busy."""
+        if os.name == "nt":
+            import msvcrt
+
+            if lock_path.stat().st_size == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+            try:
+                msvcrt.locking(handle.fileno(), mode, 1)
+            except OSError:
+                return False
+            return True
+
+        import fcntl
+
+        flags = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
+        try:
+            fcntl.flock(handle.fileno(), flags)
+        except OSError:
+            return False
+        return True
+
+    @staticmethod
+    def _unlock_repo_process_handle(handle: Any) -> None:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            return
+
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     @staticmethod
     def _snapshot_has_files(snapshot: SnapshotRef, required_files: Sequence[str]) -> bool:

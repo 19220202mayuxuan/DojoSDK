@@ -31,3 +31,4 @@ class ParquetQuery(BaseModel):
     limit_scope: Literal["global", "per_group"] = "global"
     limit_group_field: str | None = None
     max_materialized_rows: int = Field(gt=0)
+    max_materialized_bytes: int | None = Field(default=None, gt=0)

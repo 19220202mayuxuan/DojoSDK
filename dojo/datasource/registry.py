@@ -17,6 +17,10 @@ class HFEndpointSpec:
                 self.ms_repo_id = "alphadojo/" + self.repo_id.split("/", 1)[1]
             else:
                 self.ms_repo_id = self.repo_id
+        if self.max_materialized_rows <= 0:
+            raise ValueError("max_materialized_rows must be positive")
+        if self.max_materialized_bytes is not None and self.max_materialized_bytes <= 0:
+            raise ValueError("max_materialized_bytes must be positive or None")
 
     # File path template rendered with request parameters
     path_template: str = "data.parquet"
@@ -60,6 +64,10 @@ class HFEndpointSpec:
 
     # Hard cap applied before any LazyFrame is materialized.
     max_materialized_rows: int = 100_000
+
+    # Optional telemetry threshold checked before conversion to Python rows.
+    # Exceeding it is logged but not rejected until enforcement is introduced.
+    max_materialized_bytes: int | None = None
 
     # Envelope wrapping format: "list" or "dict"
     envelope: str = "list"

@@ -154,6 +154,46 @@ def test_materialization_limit_is_applied_before_collect(tmp_path: Path) -> None
     assert caught.value.observed_at_least == 3
 
 
+def test_materialized_byte_threshold_logs_without_rejecting(tmp_path: Path) -> None:
+    path = tmp_path / "wide-data.parquet"
+    pq.write_table(pa.table({"value": ["x" * 1024]}), path)
+    snapshot = _snapshot(path)
+    spec = HFEndpointSpec(
+        repo_id="test/repo",
+        path_template="data.parquet",
+        max_materialized_bytes=1,
+    )
+    query = QueryBuilder(spec, ("value",)).build({})
+
+    with patch("dojo.datasource.polars_query.logger.warning") as warning:
+        rows = PolarsQueryEngine().execute(
+            snapshot,
+            relative_paths=["data.parquet"],
+            query=query,
+        )
+
+    assert rows == [{"value": "x" * 1024}]
+    warning.assert_called_once()
+    assert "enforcement=disabled" in warning.call_args.args[0]
+
+
+def test_materialized_byte_threshold_defaults_to_disabled(tmp_path: Path) -> None:
+    path = tmp_path / "default-byte-limit.parquet"
+    pq.write_table(pa.table({"value": [1]}), path)
+    snapshot = _snapshot(path)
+    query = QueryBuilder(_spec(), ("value",)).build({})
+
+    with patch("dojo.datasource.polars_query.logger.warning") as warning:
+        rows = PolarsQueryEngine().execute(
+            snapshot,
+            relative_paths=["data.parquet"],
+            query=query,
+        )
+
+    assert rows == [{"value": 1}]
+    warning.assert_not_called()
+
+
 def test_iso_date_boundaries_are_coerced_for_timestamp_columns(tmp_path: Path) -> None:
     path = tmp_path / "data.parquet"
     table = pa.table(

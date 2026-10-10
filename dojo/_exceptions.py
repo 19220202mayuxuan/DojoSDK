@@ -115,3 +115,43 @@ class MaterializationLimitError(DojoError):
         )
         self.limit = limit
         self.observed_at_least = observed_at_least
+
+
+class QueryConcurrencyLimitError(DojoError):
+    """A Polars query could not enter the bounded collect execution slot."""
+
+    def __init__(
+        self,
+        *,
+        max_concurrent: int,
+        queue_timeout_seconds: float,
+    ) -> None:
+        super().__init__(
+            "Polars query queue wait exceeded "
+            f"queue_timeout_seconds={queue_timeout_seconds}; "
+            f"max_concurrent={max_concurrent}. Retry the query later."
+        )
+        self.max_concurrent = max_concurrent
+        self.queue_timeout_seconds = queue_timeout_seconds
+
+
+class SnapshotLockTimeoutError(DojoError):
+    """A snapshot repository lock was not acquired before its deadline.
+
+    Raised instead of blocking forever when another process holds the
+    repository lock without making progress (for example a stalled snapshot
+    sync). Previously this wait was unbounded, so a single stuck peer could
+    freeze every reader in every process.
+    """
+
+    def __init__(self, *, path: str, timeout_seconds: float) -> None:
+        super().__init__(
+            f"Waited {timeout_seconds:g}s for the snapshot repository lock at "
+            f"{path} without acquiring it. Another process is publishing, "
+            "leasing, or garbage-collecting this repository and appears stuck. "
+            "Check for a hung `sync_offline_snapshots` / `gc_offline_snapshots` "
+            "process, raise DOJO_SNAPSHOT_LOCK_TIMEOUT_SECONDS, or set it to 0 "
+            "to wait indefinitely."
+        )
+        self.path = path
+        self.timeout_seconds = timeout_seconds

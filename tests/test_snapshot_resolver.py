@@ -14,7 +14,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from dojo._exceptions import OfflineDataNotAvailableError
+from dojo._exceptions import OfflineDataNotAvailableError, SnapshotLockTimeoutError
 from dojo.client.async_client import AsyncDojo
 from dojo.client.sync import Dojo
 from dojo.datasource.config import HFConfig
@@ -605,3 +605,116 @@ async def test_async_client_exposes_explicit_snapshot_interfaces(tmp_path: Path)
     gc_result = await client.gc_offline_snapshots(paths=["/api/qdata/v1/stock/kline"])
     assert gc_result.dry_run is True
     assert gc_result.removed == ()
+
+
+# --- bounded .repo.lock acquisition -----------------------------------------
+#
+# Readers take the same cross-process repository lock as publication/GC. Before
+# the deadline was introduced a peer that held the lock and then stalled (for
+# example a snapshot sync blocked on a dead network) froze every reader in every
+# process forever. These tests pin the bounded behaviour and its opt-out.
+
+
+def _lock_resolver(tmp_path: Path, timeout: float) -> SnapshotResolver:
+    return SnapshotResolver(
+        HFConfig(
+            backend="huggingface",
+            cache_dir=str(tmp_path / "provider-cache"),
+            snapshot_lock_timeout_seconds=timeout,
+        )
+    )
+
+
+def test_repo_process_lock_acquires_and_releases_when_free(tmp_path: Path) -> None:
+    resolver = _lock_resolver(tmp_path, 5.0)
+    repo_root = tmp_path / "repo"
+    with resolver._repo_process_lock(repo_root):
+        assert (repo_root / ".repo.lock").exists()
+    # Released on exit: a second acquisition in the same process is immediate.
+    started = time.monotonic()
+    with resolver._repo_process_lock(repo_root):
+        pass
+    assert time.monotonic() - started < 1.0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="fcntl-based contention is POSIX-only")
+def test_repo_process_lock_times_out_when_peer_holds(tmp_path: Path) -> None:
+    import fcntl
+
+    resolver = _lock_resolver(tmp_path, 0.5)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    lock_path = repo_root / ".repo.lock"
+    lock_path.touch()
+
+    # flock is per open-file-description, so a second open() in this process
+    # genuinely contends just like a peer process would.
+    holder = lock_path.open("a+b")
+    fcntl.flock(holder.fileno(), fcntl.LOCK_EX)
+    try:
+        started = time.monotonic()
+        with pytest.raises(SnapshotLockTimeoutError) as excinfo:
+            with resolver._repo_process_lock(repo_root):
+                raise AssertionError("must not acquire a lock held by a peer")
+        elapsed = time.monotonic() - started
+    finally:
+        fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+        holder.close()
+
+    # Fail fast: honours the deadline instead of blocking forever.
+    assert 0.4 <= elapsed < 5.0, f"deadline not honoured ({elapsed:.2f}s)"
+    error = excinfo.value
+    assert str(lock_path) in str(error)
+    assert "DOJO_SNAPSHOT_LOCK_TIMEOUT_SECONDS" in str(error)
+
+    # Once the peer releases, the same resolver acquires again.
+    with resolver._repo_process_lock(repo_root):
+        pass
+
+
+@pytest.mark.skipif(os.name == "nt", reason="fcntl-based contention is POSIX-only")
+def test_repo_process_lock_zero_timeout_keeps_unbounded_wait(tmp_path: Path) -> None:
+    import fcntl
+
+    resolver = _lock_resolver(tmp_path, 0.0)
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir(parents=True, exist_ok=True)
+    lock_path = repo_root / ".repo.lock"
+    lock_path.touch()
+
+    holder = lock_path.open("a+b")
+    fcntl.flock(holder.fileno(), fcntl.LOCK_EX)
+
+    def release_after_delay() -> None:
+        time.sleep(0.3)
+        fcntl.flock(holder.fileno(), fcntl.LOCK_UN)
+
+    helper = threading.Thread(target=release_after_delay)
+    helper.start()
+    try:
+        started = time.monotonic()
+        with resolver._repo_process_lock(repo_root):
+            elapsed = time.monotonic() - started
+    finally:
+        helper.join()
+        holder.close()
+
+    # timeout=0 restores the legacy semantics: wait for the peer, never raise.
+    assert elapsed >= 0.25, f"should have waited for the peer, only {elapsed:.2f}s"
+
+
+def test_snapshot_lock_timeout_from_env_and_validation(monkeypatch) -> None:
+    monkeypatch.setenv("DOJO_SNAPSHOT_LOCK_TIMEOUT_SECONDS", "7.5")
+    assert HFConfig.from_env().snapshot_lock_timeout_seconds == 7.5
+
+    monkeypatch.setenv("DOJO_SNAPSHOT_LOCK_TIMEOUT_SECONDS", "0")
+    assert HFConfig.from_env().snapshot_lock_timeout_seconds == 0.0
+
+    monkeypatch.delenv("DOJO_SNAPSHOT_LOCK_TIMEOUT_SECONDS")
+    assert HFConfig.from_env().snapshot_lock_timeout_seconds == 300.0
+
+    with pytest.raises(ValueError):
+        HFConfig(snapshot_lock_timeout_seconds=-1.0)
+    with pytest.raises(ValueError):
+        HFConfig(snapshot_lock_timeout_seconds=float("inf"))
+

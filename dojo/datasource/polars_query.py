@@ -12,6 +12,8 @@ import polars as pl
 import pyarrow.parquet as pq
 
 from dojo._exceptions import MaterializationLimitError, OfflineDataNotAvailableError
+from dojo.datasource.concurrency import PolarsCollectLimiter, get_process_polars_collect_limiter
+from dojo.logging import logger
 from dojo.types.query import ParquetQuery, QueryFilter
 from dojo.types.snapshot import SnapshotFile, SnapshotRef
 
@@ -52,8 +54,19 @@ class ParquetMetadataCache:
 class PolarsQueryEngine:
     """Execute bounded queries without eagerly loading complete Parquet files."""
 
-    def __init__(self, *, metadata_cache_size: int = 1024) -> None:
+    def __init__(
+        self,
+        *,
+        metadata_cache_size: int = 1024,
+        collect_limiter: PolarsCollectLimiter | None = None,
+    ) -> None:
         self._metadata = ParquetMetadataCache(metadata_cache_size)
+        self._collect_limiter = collect_limiter
+
+    def collect_frame(self, lazy_frame: pl.LazyFrame) -> pl.DataFrame:
+        """Materialize one frame through the shared process collect limiter."""
+        limiter = self._collect_limiter or get_process_polars_collect_limiter()
+        return limiter.run(lambda: lazy_frame.collect(engine="streaming"))
 
     def schema_columns(
         self,
@@ -161,12 +174,22 @@ class PolarsQueryEngine:
         json_columns: set[str],
     ) -> list[dict]:
         bounded = lazy_frame.limit(query.max_materialized_rows + 1)
-        frame = bounded.collect(engine="streaming")
+        frame = self.collect_frame(bounded)
         if frame.height > query.max_materialized_rows:
             raise MaterializationLimitError(
                 limit=query.max_materialized_rows,
                 observed_at_least=frame.height,
             )
+        if query.max_materialized_bytes is not None:
+            estimated_bytes = frame.estimated_size()
+            if estimated_bytes > query.max_materialized_bytes:
+                logger.warning(
+                    "Offline query exceeded max_materialized_bytes telemetry threshold: "
+                    "estimated_bytes=%s max_materialized_bytes=%s rows=%s enforcement=disabled",
+                    estimated_bytes,
+                    query.max_materialized_bytes,
+                    frame.height,
+                )
         if query.output_columns == ():
             return [{} for _index in range(frame.height)]
 

@@ -7,6 +7,7 @@ import json as json_module
 import re
 import polars as pl
 from dojo.datasource.config import HFConfig
+from dojo.datasource.concurrency import configure_process_polars_collect_limiter
 from dojo.datasource.polars_query import PolarsQueryEngine
 from dojo.datasource.query_builder import QueryBuilder
 from dojo.datasource.registry import HFEndpointSpec, resolve
@@ -29,6 +30,11 @@ class HuggingFaceDataSource:
         small_table_cache: SmallTableCache | None = None,
     ) -> None:
         self._cfg = config or HFConfig.from_env()
+        if self._cfg.polars_max_concurrent_queries is not None:
+            configure_process_polars_collect_limiter(
+                max_concurrent=self._cfg.polars_max_concurrent_queries,
+                queue_timeout_seconds=self._cfg.polars_queue_timeout_seconds,
+            )
         self._snapshot_resolver = SnapshotResolver(self._cfg)
         self._query_engine = PolarsQueryEngine()
         self._small_table_cache = small_table_cache or SmallTableCache()
@@ -463,7 +469,9 @@ class HuggingFaceAttributionFactorDataSource(HuggingFaceDataSource):
         if cached is not None:
             return cached.lazy()
         lazy_frame = lazy_frame_factory()
-        candidate = lazy_frame.limit(self._small_table_cache.max_rows + 1).collect(engine="streaming")
+        candidate = self._query_engine.collect_frame(
+            lazy_frame.limit(self._small_table_cache.max_rows + 1)
+        )
         if candidate.height <= self._small_table_cache.max_rows and self._small_table_cache.put(key, candidate):
             return candidate.lazy()
         return lazy_frame
@@ -528,11 +536,10 @@ class HuggingFaceAttributionFactorDataSource(HuggingFaceDataSource):
         id_column = "id" if "id" in schema else ("sector_id" if "sector_id" in schema else None)
         if id_column is None or "level" not in schema:
             return set()
-        bounded = (
+        bounded = self._query_engine.collect_frame(
             sector_view.filter(pl.col("level").is_in(sorted(target_levels)))
             .select(pl.col(id_column).drop_nulls().cast(pl.String).unique())
             .limit(self._small_table_cache.max_rows + 1)
-            .collect(engine="streaming")
         )
         if bounded.height > self._small_table_cache.max_rows:
             raise OfflineDataNotAvailableError("Sector scope lookup exceeds the configured small-table row limit")
@@ -757,6 +764,7 @@ class HuggingFaceKlineDataSource(StockDataSource):
         collect_query = ParquetQuery(
             execution_columns=(),
             max_materialized_rows=spec.max_materialized_rows,
+            max_materialized_bytes=spec.max_materialized_bytes,
         )
         raw_rows = self._query_engine.execute_lazy_frame(lazy_frame, query=collect_query)
         return KlineBatchResult(

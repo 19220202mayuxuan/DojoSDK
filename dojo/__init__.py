@@ -26,6 +26,8 @@ from dojo._exceptions import (
     InternalServerError as InternalServerError,
     OfflineDataNotAvailableError as OfflineDataNotAvailableError,
     MaterializationLimitError as MaterializationLimitError,
+    QueryConcurrencyLimitError as QueryConcurrencyLimitError,
+    SnapshotLockTimeoutError as SnapshotLockTimeoutError,
 )
 
 __all__ = [
@@ -48,4 +50,6 @@ __all__ = [
     "InternalServerError",
     "OfflineDataNotAvailableError",
     "MaterializationLimitError",
+    "QueryConcurrencyLimitError",
+    "SnapshotLockTimeoutError",
 ]

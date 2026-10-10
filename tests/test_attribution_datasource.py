@@ -9,7 +9,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from dojo.datasource.config import HFConfig
 from dojo.datasource.huggingface import HuggingFaceAttributionFactorDataSource
+from dojo.datasource.concurrency import (
+    configure_process_polars_collect_limiter,
+    get_process_polars_collect_limiter,
+)
 from dojo.datasource.small_table_cache import SmallTableCache, SmallTableCacheKey
 from dojo.types.snapshot import SnapshotFile, SnapshotRef
 
@@ -184,6 +189,38 @@ def test_scope_uses_sector_snapshot_and_combined_revision_key(tmp_path: Path) ->
     assert len(attribution_keys) == 2
     assert any("sector-token-1" in dependency for dependency in attribution_keys[0].snapshot_dependencies)
     assert any("sector-token-2" in dependency for dependency in attribution_keys[1].snapshot_dependencies)
+
+
+def test_all_attribution_collect_paths_share_one_non_nested_limiter(tmp_path: Path) -> None:
+    attr, sector = _fixtures(tmp_path)
+    try:
+        limiter = configure_process_polars_collect_limiter(
+            max_concurrent=1,
+            queue_timeout_seconds=0,
+        )
+        source = HuggingFaceAttributionFactorDataSource(
+            HFConfig(polars_max_concurrent_queries=None)
+        )
+        with (
+            patch.object(
+                source._snapshot_resolver,
+                "ensure_offline_snapshots",
+                side_effect=_resolver(attr, sector),
+            ),
+            patch.object(limiter, "run", wraps=limiter.run) as run,
+        ):
+            result = source.fetch(
+                method="GET",
+                path=ATTRIBUTION_PATH,
+                params={"scope": "L2"},
+            )
+
+        assert result["data"]["total_num"] == 3
+        # canonical view, sector cache candidate, sector scope and final rows.
+        assert run.call_count == 4
+        assert get_process_polars_collect_limiter() is limiter
+    finally:
+        configure_process_polars_collect_limiter(max_concurrent=0)
 
 
 def test_unavailable_sector_snapshot_preserves_attribution_results(tmp_path: Path) -> None:

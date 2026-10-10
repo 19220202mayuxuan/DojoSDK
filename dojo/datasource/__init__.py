@@ -5,6 +5,12 @@ from .snapshot import KeyedLockPool, SnapshotResolver, combine_snapshot_tokens, 
 from .query_builder import QueryBuilder
 from .polars_query import ParquetMetadataCache, PolarsQueryEngine
 from .small_table_cache import SmallTableCache, SmallTableCacheKey
+from .concurrency import (
+    PolarsCollectLimiter,
+    configure_process_polars_collect_limiter,
+    get_process_polars_collect_limiter,
+    run_with_process_polars_collect_limiter,
+)
 from .huggingface import HuggingFaceDataSource, StockDataSource, HuggingFaceKlineDataSource, HuggingFaceAttributionFactorDataSource
 from .api import ApiDataSource
 
@@ -23,6 +29,10 @@ __all__ = [
     "PolarsQueryEngine",
     "SmallTableCache",
     "SmallTableCacheKey",
+    "PolarsCollectLimiter",
+    "configure_process_polars_collect_limiter",
+    "get_process_polars_collect_limiter",
+    "run_with_process_polars_collect_limiter",
     "HuggingFaceDataSource",
     "StockDataSource",
     "HuggingFaceKlineDataSource",

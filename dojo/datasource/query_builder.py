@@ -137,6 +137,7 @@ class QueryBuilder:
             limit_scope=limit_scope,
             limit_group_field=limit_group_field,
             max_materialized_rows=self._spec.max_materialized_rows,
+            max_materialized_bytes=self._spec.max_materialized_bytes,
         )
 
     def _output_columns(self, params: Mapping[str, Any]) -> tuple[str, ...] | None:
