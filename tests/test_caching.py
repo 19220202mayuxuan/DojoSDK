@@ -1,26 +1,44 @@
-from dojo import Dojo
-import time
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import patch
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+from dojo.datasource.huggingface import HuggingFaceDataSource
+from dojo.types.snapshot import SnapshotFile, SnapshotRef
 
 
-def test_caching():
-    client = Dojo(api_key="test")
+def test_fetch_df_does_not_retain_a_full_dataframe_cache(tmp_path: Path) -> None:
+    parquet_path = tmp_path / "data.parquet"
+    pq.write_table(
+        pa.table({"symbol": ["AAPL"], "bar_time": ["2026-01-01"], "close": [1.0]}),
+        parquet_path,
+    )
+    snapshot = SnapshotRef(
+        backend="huggingface",
+        repo_id="AlphaDojo/dojo_stock_kline",
+        resolved_revision="revision-one",
+        snapshot_token="snapshot-one",
+        files=(
+            SnapshotFile(
+                relative_path="data.parquet",
+                local_path=parquet_path,
+                size=parquet_path.stat().st_size,
+            ),
+        ),
+    )
+    source = HuggingFaceDataSource()
 
-    # First fetch (should hit disk)
-    start = time.time()
-    df1 = client.stocks.get_all_klines_with_df()
-    t1 = time.time() - start
-    print(f"First fetch: {t1:.4f} seconds (Shape: {df1.shape})")
+    with patch.object(
+        source._snapshot_resolver,
+        "ensure_offline_snapshots",
+        return_value=[snapshot],
+    ):
+        first = source.fetch_df(path="/api/qdata/v1/stock/kline", params={"symbol": "AAPL"})
+        second = source.fetch_df(path="/api/qdata/v1/stock/kline", params={"symbol": "AAPL"})
 
-    # Second fetch (should hit cache)
-    start = time.time()
-    df2 = client.stocks.get_all_klines_with_df()
-    t2 = time.time() - start
-    print(f"Second fetch: {t2:.4f} seconds (Shape: {df2.shape})")
-
-    assert t2 < t1, "Second fetch was not faster than first fetch!"
-    assert df1 is df2, "The returned DataFrame is not the exact same cached object!"
-
-
-if __name__ == "__main__":
-    test_caching()
-    print("Caching test passed!")
+    assert first.equals(second)
+    assert first is not second
+    assert not hasattr(source, "_df_cache")

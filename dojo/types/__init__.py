@@ -57,7 +57,18 @@ from dojo.types.models import (
     MarketMacroEventDailyRequest as MarketMacroEventDailyRequest,
     MarketStructuredEventIngestResponse as MarketStructuredEventIngestResponse,
     MarketStructuredEventListResponse as MarketStructuredEventListResponse,
+    Kline as Kline,
+    KlineBatchResult as KlineBatchResult,
 )
+from dojo.types.snapshot import (
+    SnapshotFile,
+    SnapshotGCResult,
+    SnapshotMetadata,
+    SnapshotRef,
+    SnapshotSyncFailure,
+    SnapshotSyncResult,
+)
+from dojo.types.query import ParquetQuery, QueryFilter
 
 __all__ = [
     "CompetitorsResponse",
@@ -118,4 +129,14 @@ __all__ = [
     "MarketMacroEventDailyRequest",
     "MarketStructuredEventIngestResponse",
     "MarketStructuredEventListResponse",
+    "Kline",
+    "KlineBatchResult",
+    "SnapshotFile",
+    "SnapshotGCResult",
+    "SnapshotMetadata",
+    "SnapshotRef",
+    "SnapshotSyncFailure",
+    "SnapshotSyncResult",
+    "ParquetQuery",
+    "QueryFilter",
 ]

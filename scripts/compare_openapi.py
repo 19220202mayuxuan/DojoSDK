@@ -11,8 +11,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Compare QData OpenAPI schema against DojoSDK codebase implementations.")
     parser.add_argument(
         "--openapi",
-        default="docs/qdata_openapi.json",
-        help="Path to the OpenAPI JSON file (default: docs/qdata_openapi.json)",
+        default="docs/site/assets/openapi/qdata_openapi.json",
+        help="Path to the OpenAPI JSON file (default: docs/site/assets/openapi/qdata_openapi.json)",
     )
     parser.add_argument(
         "--codebase",
