@@ -18,6 +18,7 @@ from dojo.types.models import (
     SectorBriefExtractWriteResponse,
     ResearchAggregateResponse,
     ResearchCreateRequest,
+    ResearchDeleteResponse,
     ResearchListResponse,
     ResearchResultListResponse,
     ResearchResultSnapshotRequest,
@@ -32,6 +33,7 @@ class Analysis(SyncAPIResource):
         self,
         *,
         scope: Literal["public", "mine"] | None = None,
+        is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
         start_time: str | None = None,
@@ -49,6 +51,7 @@ class Analysis(SyncAPIResource):
             key: value
             for key, value in {
                 "scope": scope,
+                "is_editor_pick": is_editor_pick,
                 "sector_id": sector_id,
                 "status": status,
                 "start_time": start_time,
@@ -87,6 +90,13 @@ class Analysis(SyncAPIResource):
         return self._get(
             f"/api/qdata/v1/analysis/research/{research_uid}",
             cast_to=ResearchAggregateResponse,
+        )
+
+    def delete_market_research(self, research_uid: str) -> ResearchDeleteResponse:
+        """Soft-delete one market research root."""
+        return self._delete(
+            f"/api/qdata/v1/analysis/research/{research_uid}",
+            cast_to=ResearchDeleteResponse,
         )
 
     def list_market_research_results(
@@ -497,6 +507,7 @@ class AsyncAnalysis(AsyncAPIResource):
         self,
         *,
         scope: Literal["public", "mine"] | None = None,
+        is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
         start_time: str | None = None,
@@ -514,6 +525,7 @@ class AsyncAnalysis(AsyncAPIResource):
             key: value
             for key, value in {
                 "scope": scope,
+                "is_editor_pick": is_editor_pick,
                 "sector_id": sector_id,
                 "status": status,
                 "start_time": start_time,
@@ -552,6 +564,13 @@ class AsyncAnalysis(AsyncAPIResource):
         return await self._get(
             f"/api/qdata/v1/analysis/research/{research_uid}",
             cast_to=ResearchAggregateResponse,
+        )
+
+    async def delete_market_research(self, research_uid: str) -> ResearchDeleteResponse:
+        """Soft-delete one market research root."""
+        return await self._delete(
+            f"/api/qdata/v1/analysis/research/{research_uid}",
+            cast_to=ResearchDeleteResponse,
         )
 
     async def list_market_research_results(
