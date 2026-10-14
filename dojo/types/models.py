@@ -716,6 +716,11 @@ class ResearchListResponse(DojoModel):
     data: List[ResearchCardResponse] = Field(default_factory=list)
 
 
+class ResearchDeleteResponse(DojoModel):
+    result: str = "success"
+    research_uid: str
+
+
 class ResearchResultListResponse(DojoModel):
     page: int
     size: int
@@ -743,6 +748,7 @@ MarketResearchResultResponse = ResearchResultResponse
 MarketResearchCardResponse = ResearchCardResponse
 MarketResearchAggregateResponse = ResearchAggregateResponse
 MarketResearchListResponse = ResearchListResponse
+MarketResearchDeleteResponse = ResearchDeleteResponse
 MarketResearchResultListResponse = ResearchResultListResponse
 MarketResearchResultWriteResponse = ResearchResultWriteResponse
 

@@ -1,11 +1,14 @@
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
+from dojo import AsyncDojo, Dojo, NotFoundError, PermissionDeniedError
 from dojo.resources.analysis import Analysis, AsyncAnalysis
 from dojo.types.models import (
     ResearchAggregateResponse,
+    ResearchDeleteResponse,
     ResearchListResponse,
     ResearchResultListResponse,
     ResearchResultSnapshotRequest,
@@ -64,11 +67,11 @@ def test_market_research_sync_routes_and_preserves_nullable_result_fields() -> N
     client.get.return_value = ResearchListResponse(page=1, size=10, total_num=0, total_page=0, num=0, data=[])
     client.post.return_value = ResearchResultWriteResponse(result_id=901)
 
-    Analysis(client).list_market_research(scope="mine", sector_id=42, status="tracking", limit=25, offset=5)
+    Analysis(client).list_market_research(scope="mine", is_editor_pick=True, sector_id=42, status="tracking", limit=25, offset=5)
     client.get.assert_called_once_with(
         "/api/qdata/v1/analysis/research",
         cast_to=ResearchListResponse,
-        options={"params": {"scope": "mine", "sector_id": 42, "status": "tracking", "limit": 25, "offset": 5}},
+        options={"params": {"scope": "mine", "is_editor_pick": True, "sector_id": 42, "status": "tracking", "limit": 25, "offset": 5}},
     )
 
     client.reset_mock()
@@ -245,11 +248,11 @@ async def test_market_research_async_root_and_list_routes() -> None:
     client.put = AsyncMock()
 
     analysis = AsyncAnalysis(client)
-    await analysis.list_market_research(scope="mine")
+    await analysis.list_market_research(scope="mine", is_editor_pick=False)
     client.get.assert_awaited_once_with(
         "/api/qdata/v1/analysis/research",
         cast_to=ResearchListResponse,
-        options={"params": {"scope": "mine"}},
+        options={"params": {"scope": "mine", "is_editor_pick": False}},
     )
 
     await analysis.create_market_research_result(ROOT_BODY["research_uid"], body=RESULT_BODY)
@@ -309,3 +312,91 @@ async def test_update_market_research_result_async_validates_before_sending() ->
     with pytest.raises(ValidationError):
         await AsyncAnalysis(client).update_market_research_result("research-1", 901, body={**RESULT_BODY, "decision_logic": "legacy"})
     client.put.assert_not_awaited()
+
+
+@pytest.mark.parametrize("return_raw_data", [False, True])
+def test_delete_market_research_sync_http_contract(monkeypatch, return_raw_data: bool) -> None:
+    monkeypatch.setenv("DOJO_ONLINE", "true")
+    payload = {"result": "success", "research_uid": ROOT_BODY["research_uid"]}
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"code": 0, "data": payload})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = Dojo(api_key="test", base_url="https://dojo.test", http_client=http_client, return_raw_data=return_raw_data)
+        response = client.analysis.delete_market_research(ROOT_BODY["research_uid"])
+
+    assert len(seen) == 1
+    assert seen[0].method == "DELETE"
+    assert str(seen[0].url) == "https://dojo.test/api/qdata/v1/analysis/research/research-energy-2026-001"
+    assert seen[0].content == b""
+    assert seen[0].headers["Authorization"] == "Bearer test"
+    if return_raw_data:
+        assert response == payload
+    else:
+        assert isinstance(response, ResearchDeleteResponse)
+        assert response.model_dump() == payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("return_raw_data", [False, True])
+async def test_delete_market_research_async_http_contract(monkeypatch, return_raw_data: bool) -> None:
+    monkeypatch.setenv("DOJO_ONLINE", "true")
+    payload = {"result": "success", "research_uid": ROOT_BODY["research_uid"]}
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"code": 0, "data": payload})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = AsyncDojo(api_key="test", base_url="https://dojo.test", http_client=http_client, return_raw_data=return_raw_data)
+        response = await client.analysis.delete_market_research(ROOT_BODY["research_uid"])
+
+    assert len(seen) == 1
+    assert seen[0].method == "DELETE"
+    assert str(seen[0].url) == "https://dojo.test/api/qdata/v1/analysis/research/research-energy-2026-001"
+    assert seen[0].content == b""
+    assert seen[0].headers["Authorization"] == "Bearer test"
+    if return_raw_data:
+        assert response == payload
+    else:
+        assert isinstance(response, ResearchDeleteResponse)
+        assert response.model_dump() == payload
+
+
+@pytest.mark.parametrize("status_code,error_type", [(403, PermissionDeniedError), (404, NotFoundError)])
+def test_delete_market_research_sync_propagates_api_errors(monkeypatch, status_code, error_type) -> None:
+    monkeypatch.setenv("DOJO_ONLINE", "true")
+    body = {"detail": "research cannot be deleted"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json=body)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = Dojo(api_key="test", base_url="https://dojo.test", http_client=http_client, max_retries=0)
+        with pytest.raises(error_type) as exc_info:
+            client.analysis.delete_market_research(ROOT_BODY["research_uid"])
+
+    assert exc_info.value.status_code == status_code
+    assert exc_info.value.body == body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code,error_type", [(403, PermissionDeniedError), (404, NotFoundError)])
+async def test_delete_market_research_async_propagates_api_errors(monkeypatch, status_code, error_type) -> None:
+    monkeypatch.setenv("DOJO_ONLINE", "true")
+    body = {"detail": "research cannot be deleted"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json=body)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = AsyncDojo(api_key="test", base_url="https://dojo.test", http_client=http_client, max_retries=0)
+        with pytest.raises(error_type) as exc_info:
+            await client.analysis.delete_market_research(ROOT_BODY["research_uid"])
+
+    assert exc_info.value.status_code == status_code
+    assert exc_info.value.body == body
