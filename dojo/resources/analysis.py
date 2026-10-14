@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from dojo._compat import model_dump, model_validate
 from dojo.resources.base import SyncAPIResource, AsyncAPIResource
 from dojo.types.models import (
@@ -31,7 +31,7 @@ class Analysis(SyncAPIResource):
     def list_market_research(
         self,
         *,
-        scope: str | None = None,
+        scope: Literal["public", "mine"] | None = None,
         sector_id: int | None = None,
         status: str | None = None,
         start_time: str | None = None,
@@ -44,7 +44,7 @@ class Analysis(SyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchListResponse:
-        """List market research roots visible to the authenticated caller."""
+        """List public roots plus caller-owned roots unless an explicit view is requested."""
         params = {
             key: value
             for key, value in {
@@ -103,7 +103,7 @@ class Analysis(SyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchResultListResponse:
-        """List append-only market research results, newest first."""
+        """List market research results, newest first."""
         params = {
             key: value
             for key, value in {
@@ -131,13 +131,28 @@ class Analysis(SyncAPIResource):
         *,
         body: ResearchResultSnapshotRequest | dict[str, Any],
     ) -> ResearchResultWriteResponse:
-        """Append one complete market research result for a job run."""
+        """Append a job-run result with HTML outcome and its Markdown outcome_markdown version."""
         request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
         return self._post(
             f"/api/qdata/v1/analysis/research/{research_uid}/results",
             cast_to=ResearchResultWriteResponse,
             # Explicit nulls are part of the producer contract and must be
             # retained in the server's producer_payload.
+            options={"json": model_dump(request, exclude_none=False)},
+        )
+
+    def update_market_research_result(
+        self,
+        research_uid: str,
+        result_id: int,
+        *,
+        body: ResearchResultSnapshotRequest | dict[str, Any],
+    ) -> ResearchResultWriteResponse:
+        """Correct a result with a complete snapshot. Keep its job_run_id unchanged."""
+        request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
+        return self._put(
+            f"/api/qdata/v1/analysis/research/{research_uid}/results/{result_id}",
+            cast_to=ResearchResultWriteResponse,
             options={"json": model_dump(request, exclude_none=False)},
         )
 
@@ -469,7 +484,7 @@ class AsyncAnalysis(AsyncAPIResource):
     async def list_market_research(
         self,
         *,
-        scope: str | None = None,
+        scope: Literal["public", "mine"] | None = None,
         sector_id: int | None = None,
         status: str | None = None,
         start_time: str | None = None,
@@ -482,7 +497,7 @@ class AsyncAnalysis(AsyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchListResponse:
-        """List market research roots visible to the authenticated caller asynchronously."""
+        """List public roots plus caller-owned roots unless an explicit view is requested asynchronously."""
         params = {
             key: value
             for key, value in {
@@ -541,7 +556,7 @@ class AsyncAnalysis(AsyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchResultListResponse:
-        """List append-only market research results, newest first asynchronously."""
+        """List market research results, newest first asynchronously."""
         params = {
             key: value
             for key, value in {
@@ -569,10 +584,25 @@ class AsyncAnalysis(AsyncAPIResource):
         *,
         body: ResearchResultSnapshotRequest | dict[str, Any],
     ) -> ResearchResultWriteResponse:
-        """Append one complete market research result for a job run asynchronously."""
+        """Append a job-run result with HTML outcome and its Markdown outcome_markdown version asynchronously."""
         request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
         return await self._post(
             f"/api/qdata/v1/analysis/research/{research_uid}/results",
+            cast_to=ResearchResultWriteResponse,
+            options={"json": model_dump(request, exclude_none=False)},
+        )
+
+    async def update_market_research_result(
+        self,
+        research_uid: str,
+        result_id: int,
+        *,
+        body: ResearchResultSnapshotRequest | dict[str, Any],
+    ) -> ResearchResultWriteResponse:
+        """Correct a result with a complete snapshot. Keep its job_run_id unchanged."""
+        request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
+        return await self._put(
+            f"/api/qdata/v1/analysis/research/{research_uid}/results/{result_id}",
             cast_to=ResearchResultWriteResponse,
             options={"json": model_dump(request, exclude_none=False)},
         )
