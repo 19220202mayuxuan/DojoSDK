@@ -166,10 +166,7 @@ class SnapshotResolver:
                     snapshots.append(active)
             if unresolved:
                 reasons = "; ".join(f"{failure.repo_id}: {failure.reason}" for failure in result.failures)
-                raise OfflineDataNotAvailableError(
-                    f"Unable to ensure offline snapshots for {', '.join(unresolved)}"
-                    + (f": {reasons}" if reasons else "")
-                )
+                raise OfflineDataNotAvailableError(f"Unable to ensure offline snapshots for {', '.join(unresolved)}" + (f": {reasons}" if reasons else ""))
 
         return snapshots
 
@@ -202,12 +199,7 @@ class SnapshotResolver:
                         if isinstance(resolved, str):
                             resolved = _ResolvedRevision(resolved, resolved)
                         revision = resolved.identifier
-                        if (
-                            previous is not None
-                            and previous.resolved_revision == revision
-                            and self._snapshot_satisfies_request(previous, request)
-                            and not force
-                        ):
+                        if previous is not None and previous.resolved_revision == revision and self._snapshot_satisfies_request(previous, request) and not force:
                             snapshots.append(previous)
                             continue
 
@@ -301,11 +293,7 @@ class SnapshotResolver:
                     except OSError:
                         retained.append(revision_dir)
                         continue
-                    if (
-                        revision_dir in protected
-                        or modified > cutoff
-                        or self._revision_has_leases(revision_dir)
-                    ):
+                    if revision_dir in protected or modified > cutoff or self._revision_has_leases(revision_dir):
                         retained.append(revision_dir)
                         continue
                     size = self._directory_size(revision_dir)
@@ -364,11 +352,7 @@ class SnapshotResolver:
 
         if repos:
             for repo_id in repos:
-                matches = [
-                    spec
-                    for spec in HF_REGISTRY.values()
-                    if repo_id in {spec.repo_id, spec.ms_repo_id}
-                ]
+                matches = [spec for spec in HF_REGISTRY.values() if repo_id in {spec.repo_id, spec.ms_repo_id}]
                 if not matches:
                     raise ValueError(f"Unknown offline repository: {repo_id}")
                 selected_specs.extend(matches)
@@ -393,12 +377,8 @@ class SnapshotResolver:
             concrete_path = self._validated_relative_path(spec.path_template)
             group["files"].setdefault(concrete_path, None)
             if spec.partition_glob and spec.partition_manifest:
-                group["partition_globs"].setdefault(
-                    self._validated_glob(spec.partition_glob), None
-                )
-                group["partition_manifests"].setdefault(
-                    self._validated_relative_path(spec.partition_manifest), None
-                )
+                group["partition_globs"].setdefault(self._validated_glob(spec.partition_glob), None)
+                group["partition_manifests"].setdefault(self._validated_relative_path(spec.partition_manifest), None)
                 group["partition_fallbacks"].setdefault(concrete_path, None)
             for companion in spec.companion_files:
                 group["files"].setdefault(self._validated_relative_path(companion), None)
@@ -436,22 +416,12 @@ class SnapshotResolver:
         request: _RepoRequest,
         available_files: Sequence[str],
     ) -> tuple[str, ...]:
-        available = tuple(
-            dict.fromkeys(PurePosixPath(path).as_posix() for path in available_files)
-        )
-        partition_files = tuple(
-            path
-            for path in available
-            if any(fnmatch.fnmatchcase(path, pattern) for pattern in request.partition_globs)
-        )
-        manifests_available = bool(request.partition_manifests) and all(
-            manifest in available for manifest in request.partition_manifests
-        )
+        available = tuple(dict.fromkeys(PurePosixPath(path).as_posix() for path in available_files))
+        partition_files = tuple(path for path in available if any(fnmatch.fnmatchcase(path, pattern) for pattern in request.partition_globs))
+        manifests_available = bool(request.partition_manifests) and all(manifest in available for manifest in request.partition_manifests)
         if partition_files and manifests_available:
             exact = [path for path in request.files if path not in request.partition_fallbacks]
-            return tuple(
-                dict.fromkeys(exact + list(request.partition_manifests) + list(partition_files))
-            )
+            return tuple(dict.fromkeys(exact + list(request.partition_manifests) + list(partition_files)))
         return request.files
 
     def _resolve_revision(
@@ -467,11 +437,7 @@ class SnapshotResolver:
                 identifier=previous.resolved_revision if previous is not None else requested,
                 download_revision=requested,
                 derive_from_content=True,
-                files=(
-                    tuple(file.relative_path for file in previous.files)
-                    if previous is not None
-                    else request.files
-                ),
+                files=(tuple(file.relative_path for file in previous.files) if previous is not None else request.files),
             )
         if self._cfg.local_only:
             requested = self._provider_requested_revision(request)
@@ -479,11 +445,7 @@ class SnapshotResolver:
                 identifier=previous.resolved_revision if previous is not None else requested,
                 download_revision=requested,
                 derive_from_content=True,
-                files=(
-                    tuple(file.relative_path for file in previous.files)
-                    if previous is not None
-                    else request.files
-                ),
+                files=(tuple(file.relative_path for file in previous.files) if previous is not None else request.files),
             )
 
         if request.backend == "modelscope":
@@ -500,10 +462,7 @@ class SnapshotResolver:
         if not resolved:
             raise RuntimeError(f"Hugging Face did not return a resolved revision for {request.provider_repo_id}")
         siblings = getattr(info, "siblings", ()) or ()
-        available = [
-            str(getattr(item, "rfilename", None) or getattr(item, "path", None) or "")
-            for item in siblings
-        ]
+        available = [str(getattr(item, "rfilename", None) or getattr(item, "path", None) or "") for item in siblings]
         selected_files = self._resolved_request_files(
             request,
             [path for path in available if path],
@@ -537,9 +496,7 @@ class SnapshotResolver:
         selected_files = self._resolved_request_files(request, tuple(entries))
         missing = sorted(set(selected_files) - entries.keys())
         if missing:
-            raise FileNotFoundError(
-                f"ModelScope repository {request.provider_repo_id}@{requested} is missing: {missing}"
-            )
+            raise FileNotFoundError(f"ModelScope repository {request.provider_repo_id}@{requested} is missing: {missing}")
         manifest = [
             {
                 "path": relative_path,
@@ -585,9 +542,7 @@ class SnapshotResolver:
             staged_by_path: dict[str, tuple[str, Path, int]] = {}
             resolved_revisions: set[str] = set()
             selected_files = resolved.files or request.files
-            manifest_files = [
-                path for path in selected_files if path in request.partition_manifests
-            ]
+            manifest_files = [path for path in selected_files if path in request.partition_manifests]
             remaining_files = [path for path in selected_files if path not in manifest_files]
 
             # The new manifest is intentionally fetched first. It is the
@@ -659,9 +614,7 @@ class SnapshotResolver:
             if resolved.verify_remote_after_download:
                 verified = self._resolve_modelscope_revision(request)
                 if verified.identifier != resolved.identifier:
-                    raise RuntimeError(
-                        f"ModelScope revision changed during download: {resolved.identifier} -> {verified.identifier}"
-                    )
+                    raise RuntimeError(f"ModelScope revision changed during download: {resolved.identifier} -> {verified.identifier}")
 
             token = snapshot_token(
                 backend=request.backend,
@@ -692,9 +645,7 @@ class SnapshotResolver:
                 SnapshotFile(
                     relative_path=relative_path,
                     local_path=revision_dir.joinpath(*PurePosixPath(relative_path).parts),
-                    size=self._validate_snapshot_file(
-                        revision_dir.joinpath(*PurePosixPath(relative_path).parts)
-                    ),
+                    size=self._validate_snapshot_file(revision_dir.joinpath(*PurePosixPath(relative_path).parts)),
                 )
                 for relative_path, _staged_path, _size in staged_files
             )
@@ -854,6 +805,8 @@ class SnapshotResolver:
 
     @staticmethod
     def _link_or_copy(source: Path, destination: Path) -> None:
+        # Provider cache paths can be relative symlinks that break when moved.
+        source = source.resolve(strict=True)
         try:
             os.link(source, destination)
         except OSError:
@@ -911,11 +864,7 @@ class SnapshotResolver:
         if not selected_manifests:
             return
 
-        partition_files = {
-            path
-            for path in selected
-            if any(fnmatch.fnmatchcase(path, pattern) for pattern in request.partition_globs)
-        }
+        partition_files = {path for path in selected if any(fnmatch.fnmatchcase(path, pattern) for pattern in request.partition_globs)}
         if not partition_files:
             raise ValueError("Partition manifest was selected without partition files")
 
@@ -947,9 +896,7 @@ class SnapshotResolver:
             if manifest["hash_algorithm"] != "sha256":
                 raise ValueError(f"Unsupported partition hash_algorithm: {manifest['hash_algorithm']!r}")
             if manifest["symbol_normalization"] != "strip_upper":
-                raise ValueError(
-                    f"Unsupported partition symbol_normalization: {manifest['symbol_normalization']!r}"
-                )
+                raise ValueError(f"Unsupported partition symbol_normalization: {manifest['symbol_normalization']!r}")
             if not isinstance(manifest["bucket_count"], int) or manifest["bucket_count"] <= 0:
                 raise ValueError("Partition manifest bucket_count must be a positive integer")
 
@@ -960,10 +907,7 @@ class SnapshotResolver:
             if declared_files != partition_files:
                 missing_files = sorted(partition_files - declared_files)
                 extra_files = sorted(declared_files - partition_files)
-                raise ValueError(
-                    "Partition manifest file set mismatch: "
-                    f"missing={missing_files}, extra={extra_files}"
-                )
+                raise ValueError("Partition manifest file set mismatch: " f"missing={missing_files}, extra={extra_files}")
 
             expected_schema = str(manifest["schema_fingerprint"])
             total_rows = 0
@@ -979,15 +923,9 @@ class SnapshotResolver:
                 expected_rows = entry.get("row_count")
                 expected_sha256 = entry.get("sha256")
                 if actual_size != expected_size:
-                    raise ValueError(
-                        f"Partition file size mismatch for {relative_path}: "
-                        f"expected={expected_size}, actual={actual_size}"
-                    )
+                    raise ValueError(f"Partition file size mismatch for {relative_path}: " f"expected={expected_size}, actual={actual_size}")
                 if metadata.num_rows != expected_rows:
-                    raise ValueError(
-                        f"Partition row_count mismatch for {relative_path}: "
-                        f"expected={expected_rows}, actual={metadata.num_rows}"
-                    )
+                    raise ValueError(f"Partition row_count mismatch for {relative_path}: " f"expected={expected_rows}, actual={metadata.num_rows}")
                 actual_sha256 = self._file_sha256(file_path)
                 if actual_sha256 != expected_sha256:
                     raise ValueError(f"Partition checksum mismatch for {relative_path}")
@@ -996,9 +934,7 @@ class SnapshotResolver:
                 total_rows += metadata.num_rows
 
             if total_rows != manifest["row_count"]:
-                raise ValueError(
-                    f"Partition total row_count mismatch: expected={manifest['row_count']}, actual={total_rows}"
-                )
+                raise ValueError(f"Partition total row_count mismatch: expected={manifest['row_count']}, actual={total_rows}")
 
     def _reusable_partition_files(
         self,
@@ -1035,10 +971,7 @@ class SnapshotResolver:
                 old_path = previous_files.get(relative_path)
                 if not isinstance(old_entry, dict) or old_path is None:
                     continue
-                if not all(
-                    old_entry.get(field) == new_entry.get(field)
-                    for field in ("size", "sha256", "row_count")
-                ):
+                if not all(old_entry.get(field) == new_entry.get(field) for field in ("size", "sha256", "row_count")):
                     continue
                 try:
                     if old_path.stat().st_size != new_entry.get("size"):
@@ -1281,12 +1214,8 @@ class SnapshotResolver:
             return False
         if not request.partition_globs:
             return set(request.files).issubset(available)
-        has_partition_layout = all(
-            manifest in available for manifest in request.partition_manifests
-        ) and any(
-            fnmatch.fnmatchcase(path, pattern)
-            for path in available
-            for pattern in request.partition_globs
+        has_partition_layout = all(manifest in available for manifest in request.partition_manifests) and any(
+            fnmatch.fnmatchcase(path, pattern) for path in available for pattern in request.partition_globs
         )
         has_legacy_layout = set(request.partition_fallbacks).issubset(available)
         return has_partition_layout or has_legacy_layout

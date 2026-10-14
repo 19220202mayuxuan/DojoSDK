@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import errno
 import os
 import shutil
 import threading
@@ -108,6 +109,36 @@ def _resolver(tmp_path: Path, *, backend: str = "huggingface") -> FakeSnapshotRe
     )
 
 
+@pytest.mark.parametrize("backend", ["huggingface", "modelscope"])
+@pytest.mark.parametrize("cross_device", [False, True])
+def test_snapshot_commit_resolves_provider_symlinks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, backend: str, cross_device: bool) -> None:
+    resolver = _resolver(tmp_path, backend=backend)
+    request = resolver._select_requests(paths=["/api/qdata/v1/sector/info"], repos=None)[0]
+    blob = _parquet(tmp_path / "provider" / "blobs" / "content", 7)
+    provider_file = tmp_path / "provider" / "snapshots" / "revision" / "data.parquet"
+    provider_file.parent.mkdir(parents=True)
+    provider_file.symlink_to("../../blobs/content")
+    resolver.revisions[request.provider_repo_id] = "revision"
+    resolver.sources[(request.provider_repo_id, "revision", "data.parquet")] = provider_file
+    real_link = os.link
+
+    def link(source: Path, destination: Path) -> None:
+        if cross_device:
+            raise OSError(errno.EXDEV, "cross-device link")
+        real_link(source, destination, follow_symlinks=False)
+
+    monkeypatch.setattr("dojo.datasource.snapshot.os.link", link)
+    result = resolver.sync_offline_snapshots(paths=["/api/qdata/v1/sector/info"])
+
+    assert not result.failures
+    assert len(result.snapshots) == 1
+    committed = result.snapshots[0].files[0].local_path
+    assert committed.is_file() and not committed.is_symlink()
+    provider_file.unlink()
+    blob.unlink()
+    assert pq.read_table(committed).column("value").to_pylist() == [7]
+
+
 def test_snapshot_selection_must_be_explicit(tmp_path: Path) -> None:
     resolver = _resolver(tmp_path)
 
@@ -126,9 +157,7 @@ def test_kline_snapshot_prefers_complete_bucket_layout_and_keeps_legacy_fallback
         repos=None,
     )[0]
 
-    assert resolver._resolved_request_files(request, ["data.parquet"]) == (
-        "data.parquet",
-    )
+    assert resolver._resolved_request_files(request, ["data.parquet"]) == ("data.parquet",)
     assert resolver._resolved_request_files(
         request,
         [
@@ -169,9 +198,7 @@ def test_new_partition_revision_reuses_unchanged_bucket_by_manifest_checksum(
     resolver.sources[(repo, "r1", selected[0])] = old_manifest
     resolver.sources[(repo, "r1", selected[1])] = old_bucket_0
     resolver.sources[(repo, "r1", selected[2])] = old_bucket_1
-    old_snapshot = resolver.sync_offline_snapshots(
-        paths=["/api/qdata/v1/stock/kline"]
-    ).snapshots[0]
+    old_snapshot = resolver.sync_offline_snapshots(paths=["/api/qdata/v1/stock/kline"]).snapshots[0]
 
     unchanged_bucket = tmp_path / "new-provider-bucket-0.parquet"
     shutil.copy2(old_bucket_0, unchanged_bucket)
@@ -394,9 +421,7 @@ def test_revision_gc_is_dry_run_by_default_and_respects_query_leases(tmp_path: P
             tmp_path / f"gc-{revision}.parquet",
             value,
         )
-        snapshots.append(
-            resolver.sync_offline_snapshots(paths=["/api/qdata/v1/stock/kline"]).snapshots[0]
-        )
+        snapshots.append(resolver.sync_offline_snapshots(paths=["/api/qdata/v1/stock/kline"]).snapshots[0])
 
     preview = resolver.gc_offline_snapshots(
         paths=["/api/qdata/v1/stock/kline"],
@@ -438,9 +463,7 @@ def test_lease_snapshot_recreates_missing_lease_directory(tmp_path: Path) -> Non
         tmp_path / "lease-recreate.parquet",
         1,
     )
-    snapshot = resolver.sync_offline_snapshots(
-        paths=["/api/qdata/v1/stock/kline"]
-    ).snapshots[0]
+    snapshot = resolver.sync_offline_snapshots(paths=["/api/qdata/v1/stock/kline"]).snapshots[0]
     revision_dir = SnapshotResolver._snapshot_revision_dir(snapshot)
     assert revision_dir is not None
     lease_dir = revision_dir / ".leases"
@@ -717,4 +740,3 @@ def test_snapshot_lock_timeout_from_env_and_validation(monkeypatch) -> None:
         HFConfig(snapshot_lock_timeout_seconds=-1.0)
     with pytest.raises(ValueError):
         HFConfig(snapshot_lock_timeout_seconds=float("inf"))
-
