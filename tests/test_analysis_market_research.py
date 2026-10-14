@@ -8,16 +8,21 @@ from dojo.types.models import (
     ResearchAggregateResponse,
     ResearchListResponse,
     ResearchResultListResponse,
+    ResearchResultSnapshotRequest,
+    ResearchResultResponse,
     ResearchResultWriteResponse,
 )
 
 
 RESULT_BODY = {
     "task_name": "research-result",
+    "title": "Energy supply result",
+    "description": "Producer result metadata.",
     "observation_window": {"start_date": "2026-09-14", "end_date": "2026-09-28"},
     "probability_tier": None,
     "probability_pct": None,
-    "outcome": "Evidence is currently insufficient for a reliable probability.",
+    "outcome": "<p>Evidence is currently insufficient for a reliable probability.</p>",
+    "outcome_markdown": "Evidence is currently insufficient for a reliable probability.",
     "timeline": [],
     "used_event_uids": [],
     "generation_time": "2026-09-14T10:00:00Z",
@@ -38,16 +43,32 @@ ROOT_BODY = {
 }
 
 
+def test_result_metadata_defaults_and_response_parsing() -> None:
+    legacy = {key: value for key, value in RESULT_BODY.items() if key not in {"title", "description", "outcome_markdown"}}
+    request = ResearchResultSnapshotRequest.model_validate(legacy)
+    assert request.title == "" and request.description == ""
+    assert request.outcome_markdown == ""
+    response = ResearchResultResponse.model_validate({**RESULT_BODY, "result_id": 901, "research_uid": "research-1"})
+    assert response.title == RESULT_BODY["title"]
+    assert response.description == RESULT_BODY["description"]
+    assert response.outcome == RESULT_BODY["outcome"]
+    assert response.outcome_markdown == RESULT_BODY["outcome_markdown"]
+    legacy_response = ResearchResultResponse.model_validate({**legacy, "result_id": 902, "research_uid": "research-1"})
+    assert legacy_response.outcome_markdown == ""
+    with pytest.raises(ValidationError):
+        ResearchResultSnapshotRequest.model_validate({**RESULT_BODY, "title": "x" * 513})
+
+
 def test_market_research_sync_routes_and_preserves_nullable_result_fields() -> None:
     client = Mock()
     client.get.return_value = ResearchListResponse(page=1, size=10, total_num=0, total_page=0, num=0, data=[])
     client.post.return_value = ResearchResultWriteResponse(result_id=901)
 
-    Analysis(client).list_market_research(scope="all", sector_id=42, status="tracking", limit=25, offset=5)
+    Analysis(client).list_market_research(scope="mine", sector_id=42, status="tracking", limit=25, offset=5)
     client.get.assert_called_once_with(
         "/api/qdata/v1/analysis/research",
         cast_to=ResearchListResponse,
-        options={"params": {"scope": "all", "sector_id": 42, "status": "tracking", "limit": 25, "offset": 5}},
+        options={"params": {"scope": "mine", "sector_id": 42, "status": "tracking", "limit": 25, "offset": 5}},
     )
 
     client.reset_mock()
@@ -224,11 +245,11 @@ async def test_market_research_async_root_and_list_routes() -> None:
     client.put = AsyncMock()
 
     analysis = AsyncAnalysis(client)
-    await analysis.list_market_research(scope="all")
+    await analysis.list_market_research(scope="mine")
     client.get.assert_awaited_once_with(
         "/api/qdata/v1/analysis/research",
         cast_to=ResearchListResponse,
-        options={"params": {"scope": "all"}},
+        options={"params": {"scope": "mine"}},
     )
 
     await analysis.create_market_research_result(ROOT_BODY["research_uid"], body=RESULT_BODY)
@@ -237,3 +258,54 @@ async def test_market_research_async_root_and_list_routes() -> None:
         cast_to=ResearchResultWriteResponse,
         options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}},
     )
+
+
+@pytest.mark.parametrize("typed_body", [False, True])
+def test_update_market_research_result_sync(typed_body: bool) -> None:
+    client = Mock()
+    client.put.return_value = ResearchResultWriteResponse(result_id=901)
+    payload = {**RESULT_BODY, "extra": {"source": "correction"}}
+    body = ResearchResultSnapshotRequest.model_validate(payload) if typed_body else payload
+
+    result = Analysis(client).update_market_research_result("research-1", 901, body=body)
+
+    assert result.result_id == 901
+    client.put.assert_called_once_with(
+        "/api/qdata/v1/analysis/research/research-1/results/901",
+        cast_to=ResearchResultWriteResponse,
+        options={"json": {**payload, "research_uid": None}},
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("typed_body", [False, True])
+async def test_update_market_research_result_async(typed_body: bool) -> None:
+    client = Mock()
+    client.put = AsyncMock(return_value=ResearchResultWriteResponse(result_id=901))
+    payload = {**RESULT_BODY, "extra": {"source": "correction"}}
+    body = ResearchResultSnapshotRequest.model_validate(payload) if typed_body else payload
+
+    result = await AsyncAnalysis(client).update_market_research_result("research-1", 901, body=body)
+
+    assert result.result_id == 901
+    client.put.assert_awaited_once_with(
+        "/api/qdata/v1/analysis/research/research-1/results/901",
+        cast_to=ResearchResultWriteResponse,
+        options={"json": {**payload, "research_uid": None}},
+    )
+
+
+def test_update_market_research_result_validates_before_sending() -> None:
+    client = Mock()
+    with pytest.raises(ValidationError):
+        Analysis(client).update_market_research_result("research-1", 901, body={**RESULT_BODY, "decision_logic": "legacy"})
+    client.put.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_market_research_result_async_validates_before_sending() -> None:
+    client = Mock()
+    client.put = AsyncMock()
+    with pytest.raises(ValidationError):
+        await AsyncAnalysis(client).update_market_research_result("research-1", 901, body={**RESULT_BODY, "decision_logic": "legacy"})
+    client.put.assert_not_awaited()

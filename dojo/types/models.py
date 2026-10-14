@@ -635,10 +635,13 @@ class ResearchTimelineResponse(ResearchTimelineItem):
 class ResearchResultSnapshotRequest(ResearchRequestModel):
     research_uid: str | None = None
     task_name: str
+    title: str = Field(default="", max_length=512)
+    description: str = ""
     observation_window: ResearchObservationWindow
     probability_tier: str | None = None
     probability_pct: int | None = Field(default=None, ge=0, le=100)
-    outcome: str
+    outcome: str = Field(description="HTML version of the research report.")
+    outcome_markdown: str = Field(default="", description="Markdown version of the same research report.")
     timeline: List[ResearchTimelineItem] = Field(default_factory=list)
     used_event_uids: List[str] = Field(default_factory=list)
     generation_time: str
@@ -682,10 +685,13 @@ class ResearchResultResponse(DojoModel):
     result_id: int
     research_uid: str
     task_name: str
+    title: str = ""
+    description: str = ""
     observation_window: ResearchObservationWindow
     probability_tier: str | None = None
     probability_pct: int | None = None
-    outcome: str
+    outcome: str = Field(description="HTML version of the research report.")
+    outcome_markdown: str = Field(default="", description="Markdown version of the same research report.")
     generation_time: str
     job_run_id: str
     producer_payload: Dict[str, Any] = Field(default_factory=dict)
