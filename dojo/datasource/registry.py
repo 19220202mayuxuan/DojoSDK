@@ -17,9 +17,19 @@ class HFEndpointSpec:
                 self.ms_repo_id = "alphadojo/" + self.repo_id.split("/", 1)[1]
             else:
                 self.ms_repo_id = self.repo_id
+        if self.max_materialized_rows <= 0:
+            raise ValueError("max_materialized_rows must be positive")
+        if self.max_materialized_bytes is not None and self.max_materialized_bytes <= 0:
+            raise ValueError("max_materialized_bytes must be positive or None")
 
     # File path template rendered with request parameters
     path_template: str = "data.parquet"
+
+    # Optional partitioned layout. SnapshotResolver prefers this layout when
+    # the manifest and matching files exist, while retaining path_template as
+    # a backwards-compatible single-file fallback.
+    partition_glob: str | None = None
+    partition_manifest: str | None = None
 
     # Fallback template if specific dimension might be missing
     fallback_template: str | None = None
@@ -45,6 +55,20 @@ class HFEndpointSpec:
     # JSON deserialization columns
     json_columns: list[str] | None = None
 
+    # Columns needed by endpoint-specific derived expressions. These are kept
+    # during execution even when the caller excludes them from final output.
+    execution_columns: tuple[str, ...] = ()
+
+    # Optional sort override; time_field remains the legacy default.
+    sort_fields: tuple[str, ...] = ()
+
+    # Hard cap applied before any LazyFrame is materialized.
+    max_materialized_rows: int = 100_000
+
+    # Optional telemetry threshold checked before conversion to Python rows.
+    # Exceeding it is logged but not rejected until enforcement is introduced.
+    max_materialized_bytes: int | None = None
+
     # Envelope wrapping format: "list" or "dict"
     envelope: str = "list"
 
@@ -54,6 +78,7 @@ HF_REGISTRY: dict[str, HFEndpointSpec] = {
         repo_id="AlphaDojo/dojo_benchmark_kline",
         path_template="data.parquet",
         companion_files=("benchmark.parquet",),
+        time_field="bar_time",
         symbol_field="symbol",
         json_columns=[],
         envelope="list",
@@ -90,6 +115,8 @@ HF_REGISTRY: dict[str, HFEndpointSpec] = {
     "/api/qdata/v1/stock/kline": HFEndpointSpec(
         repo_id="AlphaDojo/dojo_stock_kline",
         path_template="data.parquet",
+        partition_glob="bucket=*/part-*.parquet",
+        partition_manifest="manifest.json",
         time_field="bar_time",
         symbol_field="symbol",
         json_columns=[],
@@ -170,6 +197,7 @@ HF_REGISTRY: dict[str, HFEndpointSpec] = {
     "/api/qdata/v1/analysis/attribution_factor": HFEndpointSpec(
         repo_id="AlphaDojo/dojo_attribution_factor",
         path_template="data.parquet",
+        time_field="generation_time",
         json_columns=["claim", "mechanism", "evidence", "affected_tickers", "attrs"],
         envelope="list",
     ),

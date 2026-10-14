@@ -24,6 +24,10 @@ from dojo._exceptions import (
     UnprocessableEntityError as UnprocessableEntityError,
     RateLimitError as RateLimitError,
     InternalServerError as InternalServerError,
+    OfflineDataNotAvailableError as OfflineDataNotAvailableError,
+    MaterializationLimitError as MaterializationLimitError,
+    QueryConcurrencyLimitError as QueryConcurrencyLimitError,
+    SnapshotLockTimeoutError as SnapshotLockTimeoutError,
 )
 
 __all__ = [
@@ -44,4 +48,8 @@ __all__ = [
     "UnprocessableEntityError",
     "RateLimitError",
     "InternalServerError",
+    "OfflineDataNotAvailableError",
+    "MaterializationLimitError",
+    "QueryConcurrencyLimitError",
+    "SnapshotLockTimeoutError",
 ]

@@ -282,6 +282,8 @@ class Analysis(SyncAPIResource):
     def get_attribution_factor(
         self,
         *,
+        page: int | None = None,
+        size: int | None = None,
         market: str | None = None,
         sector_id: int | str | None = None,
         scope: str | list[str] | None = None,
@@ -296,6 +298,10 @@ class Analysis(SyncAPIResource):
 
         Parameters
         ----------
+        page : int, optional
+            One-based result page.
+        size : int, optional
+            Records per page, at most 200.
         market : str, optional
             Market filtering (e.g. 'cn', 'hk', 'us').
         sector_id : str, optional
@@ -309,9 +315,13 @@ class Analysis(SyncAPIResource):
         end_time : str, optional
             ISO-8601 end time.
         limit : int, optional
-            Max number of records to return.
+            Deprecated compatibility limit. Use page and size instead.
         """
         params: dict[str, Any] = {}
+        if page is not None:
+            params["page"] = page
+        if size is not None:
+            params["size"] = size
         if market is not None:
             params["market"] = market
         if sector_id is not None:
@@ -354,10 +364,11 @@ class Analysis(SyncAPIResource):
     def list_sector_brief_extract(
         self,
         *,
+        start_date: str,
+        page: int | None = None,
+        size: int | None = None,
         market: str | None = None,
-        sector_id: int | str | None = None,
-        as_of_date: str | None = None,
-        start_date: str | None = None,
+        sector_id: int | None = None,
         end_date: str | None = None,
         limit: int | None = None,
     ) -> SectorBriefExtractListResponse:
@@ -365,9 +376,10 @@ class Analysis(SyncAPIResource):
         params = {
             key: value
             for key, value in {
+                "page": page,
+                "size": size,
                 "market": market,
                 "sector_id": sector_id,
-                "as_of_date": as_of_date,
                 "start_date": start_date,
                 "end_date": end_date,
                 "limit": limit,
@@ -742,8 +754,10 @@ class AsyncAnalysis(AsyncAPIResource):
     async def get_attribution_factor(
         self,
         *,
+        page: int | None = None,
+        size: int | None = None,
         market: str | None = None,
-        sector_id: str | None = None,
+        sector_id: int | str | None = None,
         scope: str | list[str] | None = None,
         factor_topic: str | None = None,
         role: str | None = None,
@@ -756,6 +770,10 @@ class AsyncAnalysis(AsyncAPIResource):
 
         Parameters
         ----------
+        page : int, optional
+            One-based result page.
+        size : int, optional
+            Records per page, at most 200.
         market : str, optional
             Market filtering (e.g. 'cn', 'hk', 'us').
         sector_id : str, optional
@@ -769,9 +787,13 @@ class AsyncAnalysis(AsyncAPIResource):
         end_time : str, optional
             ISO-8601 end time.
         limit : int, optional
-            Max number of records to return.
+            Deprecated compatibility limit. Use page and size instead.
         """
         params: dict[str, Any] = {}
+        if page is not None:
+            params["page"] = page
+        if size is not None:
+            params["size"] = size
         if market is not None:
             params["market"] = market
         if sector_id is not None:
@@ -814,10 +836,11 @@ class AsyncAnalysis(AsyncAPIResource):
     async def list_sector_brief_extract(
         self,
         *,
+        start_date: str,
+        page: int | None = None,
+        size: int | None = None,
         market: str | None = None,
-        sector_id: str | None = None,
-        as_of_date: str | None = None,
-        start_date: str | None = None,
+        sector_id: int | None = None,
         end_date: str | None = None,
         limit: int | None = None,
     ) -> SectorBriefExtractListResponse:
@@ -825,9 +848,10 @@ class AsyncAnalysis(AsyncAPIResource):
         params = {
             key: value
             for key, value in {
+                "page": page,
+                "size": size,
                 "market": market,
                 "sector_id": sector_id,
-                "as_of_date": as_of_date,
                 "start_date": start_date,
                 "end_date": end_date,
                 "limit": limit,
