@@ -20,7 +20,7 @@ TARGETS = (
     (
         "get_constituents",
         "/api/qdata/v1/market/sectors/constituents",
-        {"market": "cn", "limit": 20, "offset": 5},
+        {"market": "cn", "limit": 5000, "offset": 5},
     ),
     (
         "get_daily",
@@ -198,6 +198,7 @@ def test_sync_market_dataset_paths(monkeypatch, method: str, path: str, kwargs: 
     assert result["meta"]["total"] == 1
     assert seen[0].url.path == path
     assert seen[0].url.params["market"] == "cn"
+    assert seen[0].url.params["limit"] == str(kwargs["limit"])
     if method == "get_daily":
         assert set(seen[0].url.params) == {"market", "start_date", "limit", "offset"}
     if method == "get_ticker_daily":
@@ -221,6 +222,7 @@ async def test_async_market_dataset_paths(monkeypatch, method: str, path: str, k
     finally:
         await http_client.aclose()
     assert seen[0].url.path == path
+    assert seen[0].url.params["limit"] == str(kwargs["limit"])
 
 
 @pytest.mark.asyncio

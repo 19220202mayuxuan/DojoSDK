@@ -443,7 +443,7 @@ class ConstituentsQuery(StrictDojoModel):
     level3_id: int | None = None
     ticker: str | None = None
     role: str | None = None
-    limit: int = Field(default=100, ge=1, le=500)
+    limit: int = Field(default=100, ge=1, le=5000)
     offset: int = Field(default=0, ge=0)
 
 
