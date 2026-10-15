@@ -329,6 +329,7 @@ class Sectors(SyncAPIResource):
         self,
         *,
         market: str | None = None,
+        trade_date: str | None = None,
         level1_id: int | None = None,
         level2_id: int | None = None,
         level3_id: int | None = None,
@@ -345,6 +346,7 @@ class Sectors(SyncAPIResource):
                 "params": _query_params(
                     ConstituentsQuery(
                         market=market,
+                        trade_date=trade_date,
                         level1_id=level1_id,
                         level2_id=level2_id,
                         level3_id=level3_id,
@@ -870,6 +872,7 @@ class AsyncSectors(AsyncAPIResource):
         self,
         *,
         market: str | None = None,
+        trade_date: str | None = None,
         level1_id: int | None = None,
         level2_id: int | None = None,
         level3_id: int | None = None,
@@ -886,6 +889,7 @@ class AsyncSectors(AsyncAPIResource):
                 "params": _query_params(
                     ConstituentsQuery(
                         market=market,
+                        trade_date=trade_date,
                         level1_id=level1_id,
                         level2_id=level2_id,
                         level3_id=level3_id,

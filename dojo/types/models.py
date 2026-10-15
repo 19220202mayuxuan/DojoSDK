@@ -437,6 +437,7 @@ class ConstituentsObservation(StrictDojoModel):
 
 
 class ConstituentsQuery(StrictDojoModel):
+    trade_date: date | None = None
     market: str | None = None
     level1_id: int | None = None
     level2_id: int | None = None
