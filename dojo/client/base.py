@@ -101,6 +101,8 @@ class BaseClient:
         err_msg = f"Error code: {code}"
         if isinstance(body, dict) and "detail" in body:
             err_msg += f" - {body['detail']}"
+        elif isinstance(body, dict) and "message" in body:
+            err_msg += f" - {body['message']}"
         elif isinstance(body, str) and body:
             err_msg += f" - {body}"
 
@@ -297,7 +299,7 @@ class SyncAPIClient(BaseClient):
             timeout=timeout,
         )
 
-        retries_remaining = self.max_retries
+        retries_remaining = options.get("max_retries", self.max_retries)
         retry_count = 0
 
         while True:
@@ -423,7 +425,7 @@ class AsyncAPIClient(BaseClient):
             timeout=timeout,
         )
 
-        retries_remaining = self.max_retries
+        retries_remaining = options.get("max_retries", self.max_retries)
         retry_count = 0
 
         while True:

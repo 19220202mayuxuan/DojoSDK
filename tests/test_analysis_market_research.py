@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
+from dojo._exceptions import APIStatusError, APITimeoutError
 from pydantic import ValidationError
 
 from dojo import AsyncDojo, Dojo, NotFoundError, PermissionDeniedError
@@ -15,7 +16,6 @@ from dojo.types.models import (
     ResearchResultResponse,
     ResearchResultWriteResponse,
 )
-
 
 RESULT_BODY = {
     "task_name": "research-result",
@@ -47,16 +47,18 @@ ROOT_BODY = {
 
 
 def test_result_metadata_defaults_and_response_parsing() -> None:
-    legacy = {key: value for key, value in RESULT_BODY.items() if key not in {"title", "description", "outcome_markdown"}}
+    legacy = {key: value for key, value in RESULT_BODY.items() if key not in {"title", "description"}}
     request = ResearchResultSnapshotRequest.model_validate(legacy)
     assert request.title == "" and request.description == ""
-    assert request.outcome_markdown == ""
+    assert request.outcome_markdown == RESULT_BODY["outcome_markdown"]
     response = ResearchResultResponse.model_validate({**RESULT_BODY, "result_id": 901, "research_uid": "research-1"})
     assert response.title == RESULT_BODY["title"]
     assert response.description == RESULT_BODY["description"]
     assert response.outcome == RESULT_BODY["outcome"]
     assert response.outcome_markdown == RESULT_BODY["outcome_markdown"]
-    legacy_response = ResearchResultResponse.model_validate({**legacy, "result_id": 902, "research_uid": "research-1"})
+    legacy_response = ResearchResultResponse.model_validate(
+        {**{key: value for key, value in legacy.items() if key != "outcome_markdown"}, "result_id": 902, "research_uid": "research-1"}
+    )
     assert legacy_response.outcome_markdown == ""
     with pytest.raises(ValidationError):
         ResearchResultSnapshotRequest.model_validate({**RESULT_BODY, "title": "x" * 513})
@@ -84,7 +86,7 @@ def test_market_research_sync_routes_and_preserves_nullable_result_fields() -> N
     client.post.assert_called_once_with(
         "/api/qdata/v1/analysis/research/research-energy-2026-001/results",
         cast_to=ResearchResultWriteResponse,
-        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}},
+        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}, "max_retries": 0},
     )
 
 
@@ -236,7 +238,7 @@ async def test_market_research_async_result_matches_sync_wire_contract() -> None
     client.post.assert_awaited_once_with(
         "/api/qdata/v1/analysis/research/research-energy-2026-001/results",
         cast_to=ResearchResultWriteResponse,
-        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}},
+        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}, "max_retries": 0},
     )
 
 
@@ -259,7 +261,7 @@ async def test_market_research_async_root_and_list_routes() -> None:
     client.post.assert_awaited_once_with(
         "/api/qdata/v1/analysis/research/research-energy-2026-001/results",
         cast_to=ResearchResultWriteResponse,
-        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}},
+        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}, "max_retries": 0},
     )
 
 
@@ -400,3 +402,46 @@ async def test_delete_market_research_async_propagates_api_errors(monkeypatch, s
 
     assert exc_info.value.status_code == status_code
     assert exc_info.value.body == body
+
+
+@pytest.mark.parametrize("value", [None, "", " \n\t"])
+def test_result_request_requires_non_blank_markdown(value) -> None:
+    for body in ({key: item for key, item in RESULT_BODY.items() if key != "outcome_markdown"}, {**RESULT_BODY, "outcome_markdown": value}):
+        with pytest.raises(ValidationError, match="outcome_markdown"):
+            ResearchResultSnapshotRequest.model_validate(body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("failure", [500, 422, "timeout"])
+async def test_result_append_never_retries_and_reads_keep_retry_configuration(async_mode, failure):
+    requests = []
+
+    def transport(request):
+        requests.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("uncertain write", request=request)
+        return httpx.Response(failure, json={"message": "outcome_markdown diagnostic", "code": failure})
+
+    http_type, client_type = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    client = client_type(api_key="test", online=True, max_retries=3, http_client=http_type(transport=httpx.MockTransport(transport)))
+    client._calculate_retry_delay = lambda *args: 0
+    try:
+        with pytest.raises((APIStatusError, APITimeoutError)) as caught:
+            result = client.analysis.create_market_research_result("research-1", body=RESULT_BODY)
+            if async_mode:
+                await result
+        assert len(requests) == 1
+        if failure != "timeout":
+            assert "outcome_markdown diagnostic" in str(caught.value)
+        with pytest.raises((APIStatusError, APITimeoutError)):
+            result = client.get("/read-probe", cast_to=dict)
+            if async_mode:
+                await result
+        assert len(requests) == (2 if failure == 422 else 5)
+        assert client.max_retries == 3
+    finally:
+        if async_mode:
+            await client._client.aclose()
+        else:
+            client._client.close()

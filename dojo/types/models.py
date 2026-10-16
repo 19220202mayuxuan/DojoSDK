@@ -437,6 +437,7 @@ class ConstituentsObservation(StrictDojoModel):
 
 
 class ConstituentsQuery(StrictDojoModel):
+    trade_date: date | None = None
     market: str | None = None
     level1_id: int | None = None
     level2_id: int | None = None
@@ -641,7 +642,7 @@ class ResearchResultSnapshotRequest(ResearchRequestModel):
     probability_tier: str | None = None
     probability_pct: int | None = Field(default=None, ge=0, le=100)
     outcome: str = Field(description="HTML version of the research report.")
-    outcome_markdown: str = Field(default="", description="Markdown version of the same research report.")
+    outcome_markdown: str = Field(min_length=1, pattern=r"\S", description="Required non-blank Markdown version of the same research report.")
     timeline: List[ResearchTimelineItem] = Field(default_factory=list)
     used_event_uids: List[str] = Field(default_factory=list)
     generation_time: str

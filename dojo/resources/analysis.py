@@ -141,14 +141,14 @@ class Analysis(SyncAPIResource):
         *,
         body: ResearchResultSnapshotRequest | dict[str, Any],
     ) -> ResearchResultWriteResponse:
-        """Append a job-run result with HTML outcome and its Markdown outcome_markdown version."""
+        """Append once with HTML outcome and required non-blank outcome_markdown; never retry an uncertain write."""
         request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
         return self._post(
             f"/api/qdata/v1/analysis/research/{research_uid}/results",
             cast_to=ResearchResultWriteResponse,
             # Explicit nulls are part of the producer contract and must be
             # retained in the server's producer_payload.
-            options={"json": model_dump(request, exclude_none=False)},
+            options={"json": model_dump(request, exclude_none=False), "max_retries": 0},
         )
 
     def update_market_research_result(
@@ -615,12 +615,12 @@ class AsyncAnalysis(AsyncAPIResource):
         *,
         body: ResearchResultSnapshotRequest | dict[str, Any],
     ) -> ResearchResultWriteResponse:
-        """Append a job-run result with HTML outcome and its Markdown outcome_markdown version asynchronously."""
+        """Append once with HTML outcome and required non-blank outcome_markdown asynchronously, without retries."""
         request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
         return await self._post(
             f"/api/qdata/v1/analysis/research/{research_uid}/results",
             cast_to=ResearchResultWriteResponse,
-            options={"json": model_dump(request, exclude_none=False)},
+            options={"json": model_dump(request, exclude_none=False), "max_retries": 0},
         )
 
     async def update_market_research_result(
