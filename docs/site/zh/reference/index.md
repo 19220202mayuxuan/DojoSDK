@@ -9,3 +9,9 @@
 `create_market_research_result(research_uid, *, body)` 追加一次结果，必须同时提供 HTML `outcome` 和非空白 Markdown `outcome_markdown`；缺失、空字符串、null 或纯空白 Markdown 会在发送前拒绝。历史响应仍允许缺失 Markdown，并按空字符串读取。
 
 同步与异步结果追加均强制 `max_retries=0`，不改变客户端读请求的重试配置。500、超时和连接失败可能存在写入副作用；先读取结果核验，再人工决定恢复，禁止盲目重复追加。HTTP 错误文本同时支持 FastAPI `detail` 和 qdata `message`，原始响应仍保存在异常 `body` 中。
+
+
+纯公开研究使用 `client.analysis.list_public_market_research(page=1, size=10)`；AsyncDojo 使用同名异步方法。此方法固定读取 `/api/qdata/v1/analysis/public_research`，不接受 scope/visibility，不提供公开研究的写入或详情能力。支持行业、研究状态、impact、timeline_source、is_editor_pick、日期、搜索、排序及两组分页参数；false/offset=0 原样保留。响应 PublicResearchListResponse / PublicResearchCardResponse 中 visibility 固定 public，is_editor_pick 必填，observation_window/sector_id/impact 字段必填但允许 null。通用 list_market_research 继续查询原路径，现支持 impact/timeline_source/visibility。
+
+
+`create_market_research(body=...)` 的 `research_type` 为可选字符串（最多 64 字符，可为 null），同步和异步客户端均原样发送。`visibility` 支持 `private`、`public`，SDK 为兼容既有调用保留默认 `private`，发送时始终包含该字段。类型化研究卡响应（`return_raw_data=False`）在创建、详情和列表中均提供可选 `research_type`；未返回时为 None。

@@ -652,6 +652,7 @@ class ResearchResultSnapshotRequest(ResearchRequestModel):
 
 class ResearchCreateRequest(ResearchRequestModel):
     research_uid: str
+    research_type: str | None = Field(default=None, max_length=64)
     title: str
     description: str
     observation_window: ResearchObservationWindow
@@ -701,6 +702,7 @@ class ResearchResultResponse(DojoModel):
 
 class ResearchCardResponse(DojoModel):
     research_uid: str
+    research_type: str | None = None
     title: str
     description: str
     observation_window: ResearchObservationWindow | None = Field(...)

@@ -508,3 +508,62 @@ async def test_public_research_async_route_and_common_filter_parity():
     client.get.reset_mock()
     await AsyncAnalysis(client).list_market_research(impact="high", timeline_source="producer", visibility="private")
     assert client.get.call_args.kwargs["options"]["params"] == dict(impact="high", timeline_source="producer", visibility="private")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("visibility", ["private", "public"])
+@pytest.mark.parametrize("research_type", [None, "", "event", "x" * 64])
+async def test_create_research_type_and_visibility_http_contract(async_mode, visibility, research_type):
+    import json
+
+    requests = []
+    body = {**ROOT_BODY, "visibility": visibility, "research_type": research_type}
+
+    def transport(request):
+        requests.append(request)
+        sent = json.loads(request.content)
+        return httpx.Response(200, json={"code": 0, "data": {**sent, "owner_user_id": "owner", "timeline": []}})
+
+    http_type, client_type = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    http_client = http_type(transport=httpx.MockTransport(transport))
+    client = client_type(api_key="test", online=True, http_client=http_client, return_raw_data=False)
+    try:
+        response = client.analysis.create_market_research(body=body)
+        if async_mode:
+            response = await response
+        assert response.research_type == research_type
+        assert response.visibility == visibility
+    finally:
+        if async_mode:
+            await http_client.aclose()
+        else:
+            http_client.close()
+    assert len(requests) == 1
+    assert requests[0].method == "POST" and requests[0].url.path == "/api/qdata/v1/analysis/research"
+    assert json.loads(requests[0].content)["research_type"] == research_type
+    assert json.loads(requests[0].content)["visibility"] == visibility
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"research_type": "x" * 65},
+        {"research_type": 123},
+        {"visibility": "unlisted"},
+        {"visibility": None},
+    ],
+)
+def test_create_research_rejects_invalid_type_and_visibility_before_sending(body):
+    client = Mock()
+    with pytest.raises(ValidationError):
+        Analysis(client).create_market_research(body={**ROOT_BODY, **body})
+    client.post.assert_not_called()
+
+
+def test_create_research_preserves_legacy_private_default_and_optional_type():
+    from dojo.types.models import ResearchCreateRequest
+
+    request = ResearchCreateRequest.model_validate({key: value for key, value in ROOT_BODY.items() if key != "visibility"})
+    assert request.visibility == "private"
+    assert request.research_type is None
