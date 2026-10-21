@@ -20,6 +20,7 @@ from dojo.types.models import (
     ResearchCreateRequest,
     ResearchDeleteResponse,
     ResearchListResponse,
+    PublicResearchListResponse,
     ResearchResultListResponse,
     ResearchResultSnapshotRequest,
     ResearchResultWriteResponse,
@@ -36,6 +37,9 @@ class Analysis(SyncAPIResource):
         is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
+        impact: Literal["medium", "high", "severe"] | None = None,
+        timeline_source: Literal["producer", "manual"] | None = None,
+        visibility: Literal["private", "public"] | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
@@ -54,6 +58,9 @@ class Analysis(SyncAPIResource):
                 "is_editor_pick": is_editor_pick,
                 "sector_id": sector_id,
                 "status": status,
+                "impact": impact,
+                "timeline_source": timeline_source,
+                "visibility": visibility,
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
@@ -69,6 +76,51 @@ class Analysis(SyncAPIResource):
         return self._get(
             "/api/qdata/v1/analysis/research",
             cast_to=ResearchListResponse,
+            options={"params": params},
+        )
+
+    def list_public_market_research(
+        self,
+        *,
+        is_editor_pick: bool | None = None,
+        sector_id: int | None = None,
+        status: str | None = None,
+        impact: Literal["medium", "high", "severe"] | None = None,
+        timeline_source: Literal["producer", "manual"] | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        fuzzy: str | None = None,
+        order_by: str | None = None,
+        order_type: str | None = None,
+        page: int | None = None,
+        size: int | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> PublicResearchListResponse:
+        """List strictly public research; caller-owned private roots are never included."""
+        params = {
+            key: value
+            for key, value in {
+                "is_editor_pick": is_editor_pick,
+                "sector_id": sector_id,
+                "status": status,
+                "impact": impact,
+                "timeline_source": timeline_source,
+                "start_time": start_time,
+                "end_time": end_time,
+                "fuzzy": fuzzy,
+                "order_by": order_by,
+                "order_type": order_type,
+                "page": page,
+                "size": size,
+                "limit": limit,
+                "offset": offset,
+            }.items()
+            if value is not None
+        }
+        return self._get(
+            "/api/qdata/v1/analysis/public_research",
+            cast_to=PublicResearchListResponse,
             options={"params": params},
         )
 
@@ -510,6 +562,9 @@ class AsyncAnalysis(AsyncAPIResource):
         is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
+        impact: Literal["medium", "high", "severe"] | None = None,
+        timeline_source: Literal["producer", "manual"] | None = None,
+        visibility: Literal["private", "public"] | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
@@ -528,6 +583,9 @@ class AsyncAnalysis(AsyncAPIResource):
                 "is_editor_pick": is_editor_pick,
                 "sector_id": sector_id,
                 "status": status,
+                "impact": impact,
+                "timeline_source": timeline_source,
+                "visibility": visibility,
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
@@ -543,6 +601,51 @@ class AsyncAnalysis(AsyncAPIResource):
         return await self._get(
             "/api/qdata/v1/analysis/research",
             cast_to=ResearchListResponse,
+            options={"params": params},
+        )
+
+    async def list_public_market_research(
+        self,
+        *,
+        is_editor_pick: bool | None = None,
+        sector_id: int | None = None,
+        status: str | None = None,
+        impact: Literal["medium", "high", "severe"] | None = None,
+        timeline_source: Literal["producer", "manual"] | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        fuzzy: str | None = None,
+        order_by: str | None = None,
+        order_type: str | None = None,
+        page: int | None = None,
+        size: int | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> PublicResearchListResponse:
+        """List strictly public research; caller-owned private roots are never included."""
+        params = {
+            key: value
+            for key, value in {
+                "is_editor_pick": is_editor_pick,
+                "sector_id": sector_id,
+                "status": status,
+                "impact": impact,
+                "timeline_source": timeline_source,
+                "start_time": start_time,
+                "end_time": end_time,
+                "fuzzy": fuzzy,
+                "order_by": order_by,
+                "order_type": order_type,
+                "page": page,
+                "size": size,
+                "limit": limit,
+                "offset": offset,
+            }.items()
+            if value is not None
+        }
+        return await self._get(
+            "/api/qdata/v1/analysis/public_research",
+            cast_to=PublicResearchListResponse,
             options={"params": params},
         )
 

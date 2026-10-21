@@ -1,4 +1,6 @@
 from dojo.types.models import (
+    PublicResearchCardResponse as PublicResearchCardResponse,
+    PublicResearchListResponse as PublicResearchListResponse,
     CompetitorsResponse as CompetitorsResponse,
     RiskMetricsResponse as RiskMetricsResponse,
     MarketHistoryResponse as MarketHistoryResponse,
@@ -71,6 +73,8 @@ from dojo.types.snapshot import (
 from dojo.types.query import ParquetQuery, QueryFilter
 
 __all__ = [
+    "PublicResearchCardResponse",
+    "PublicResearchListResponse",
     "CompetitorsResponse",
     "RiskMetricsResponse",
     "MarketHistoryResponse",

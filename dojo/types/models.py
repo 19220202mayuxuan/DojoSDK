@@ -703,10 +703,10 @@ class ResearchCardResponse(DojoModel):
     research_uid: str
     title: str
     description: str
-    observation_window: ResearchObservationWindow
-    sector_id: int
+    observation_window: ResearchObservationWindow | None = Field(...)
+    sector_id: int | None = Field(...)
     status: Literal["tracking", "near_resolution"]
-    impact: Literal["medium", "high", "severe"]
+    impact: Literal["medium", "high", "severe"] | None = Field(...)
     visibility: Literal["private", "public"]
     owner_user_id: str
     timeline_source: Literal["producer", "manual"]
@@ -728,6 +728,15 @@ class ResearchListResponse(DojoModel):
     total_page: int
     num: int
     data: List[ResearchCardResponse] = Field(default_factory=list)
+
+
+class PublicResearchCardResponse(ResearchCardResponse):
+    visibility: Literal["public"]
+    is_editor_pick: bool
+
+
+class PublicResearchListResponse(ResearchListResponse):
+    data: List[PublicResearchCardResponse] = Field(default_factory=list)
 
 
 class ResearchDeleteResponse(DojoModel):

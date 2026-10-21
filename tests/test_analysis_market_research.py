@@ -445,3 +445,66 @@ async def test_result_append_never_retries_and_reads_keep_retry_configuration(as
             await client._client.aclose()
         else:
             client._client.close()
+
+
+@pytest.mark.parametrize("field", ["observation_window", "sector_id", "impact"])
+def test_public_research_nullable_fields_remain_required(field):
+    from dojo.types.models import PublicResearchCardResponse, ResearchCardResponse
+
+    card = {**ROOT_BODY, "owner_user_id": "owner", "is_editor_pick": False, field: None}
+    assert getattr(PublicResearchCardResponse.model_validate(card), field) is None
+    assert getattr(ResearchCardResponse.model_validate(card), field) is None
+    del card[field]
+    with pytest.raises(ValidationError):
+        PublicResearchCardResponse.model_validate(card)
+
+
+def test_public_research_contract_and_sync_route():
+    from dojo.types import PublicResearchCardResponse, PublicResearchListResponse
+
+    card = {**ROOT_BODY, "owner_user_id": "owner", "is_editor_pick": False}
+    assert PublicResearchCardResponse.model_validate(card).is_editor_pick is False
+    with pytest.raises(ValidationError):
+        PublicResearchCardResponse.model_validate({**card, "visibility": "private"})
+    with pytest.raises(ValidationError):
+        PublicResearchCardResponse.model_validate({k: v for k, v in card.items() if k != "is_editor_pick"})
+    client = Mock()
+    params = dict(page=1, size=10, is_editor_pick=False, offset=0, limit=25, impact="high", timeline_source="manual")
+    Analysis(client).list_public_market_research(**params)
+    client.get.assert_called_once_with("/api/qdata/v1/analysis/public_research", cast_to=PublicResearchListResponse, options={"params": params})
+    with pytest.raises(TypeError):
+        Analysis(client).list_public_market_research(scope="mine")
+    with pytest.raises(TypeError):
+        Analysis(client).list_public_market_research(visibility="private")
+    client.reset_mock()
+    Analysis(client).list_market_research(impact="high", timeline_source="producer", visibility="private")
+    assert client.get.call_args.kwargs["options"]["params"] == dict(impact="high", timeline_source="producer", visibility="private")
+
+
+@pytest.mark.asyncio
+async def test_public_research_async_route_and_common_filter_parity():
+    from dojo.types import PublicResearchListResponse
+
+    client = Mock()
+    client.get = AsyncMock()
+    params = dict(
+        page=2,
+        size=18,
+        is_editor_pick=False,
+        offset=0,
+        fuzzy="supply",
+        start_time="2026-10-01",
+        end_time="2026-10-19",
+        sector_id=42,
+        status="tracking",
+        impact="severe",
+        timeline_source="manual",
+        order_by="title",
+        order_type="asc",
+        limit=30,
+    )
+    await AsyncAnalysis(client).list_public_market_research(**params)
+    client.get.assert_awaited_once_with("/api/qdata/v1/analysis/public_research", cast_to=PublicResearchListResponse, options={"params": params})
+    client.get.reset_mock()
+    await AsyncAnalysis(client).list_market_research(impact="high", timeline_source="producer", visibility="private")
+    assert client.get.call_args.kwargs["options"]["params"] == dict(impact="high", timeline_source="producer", visibility="private")
