@@ -34,7 +34,7 @@ class Analysis(SyncAPIResource):
     def list_market_research(
         self,
         *,
-        scope: Literal["public", "mine"] | None = None,
+        scope: Literal["public", "mine", "starred"] | None = None,
         is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
@@ -51,7 +51,7 @@ class Analysis(SyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchListResponse:
-        """List public roots plus caller-owned roots unless an explicit view is requested."""
+        """List public roots plus caller-owned roots; scope also supports the caller's starred view."""
         params = {
             key: value
             for key, value in {
@@ -568,7 +568,7 @@ class AsyncAnalysis(AsyncAPIResource):
     async def list_market_research(
         self,
         *,
-        scope: Literal["public", "mine"] | None = None,
+        scope: Literal["public", "mine", "starred"] | None = None,
         is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
@@ -585,7 +585,7 @@ class AsyncAnalysis(AsyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchListResponse:
-        """List public roots plus caller-owned roots unless an explicit view is requested asynchronously."""
+        """List roots asynchronously, optionally selecting public, mine, or starred."""
         params = {
             key: value
             for key, value in {

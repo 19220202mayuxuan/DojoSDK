@@ -696,3 +696,34 @@ def test_update_research_rejects_invalid_fields_before_sending(body):
     with pytest.raises(ValidationError):
         Analysis(client).update_market_research("r-0123456789abcdef", body=body)
     client.put.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+async def test_starred_scope_annotation_and_wire_parameter(async_mode):
+    from typing import get_args, get_type_hints
+
+    resource = AsyncAnalysis if async_mode else Analysis
+    union = get_type_hints(resource.list_market_research)["scope"]
+    scope_values = next(get_args(value) for value in get_args(union) if get_args(value))
+    assert set(scope_values) == {"public", "mine", "starred"}
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"page": 1, "size": 18, "total_num": 0, "total_page": 0, "num": 0, "data": []})
+
+    http_class, sdk_class = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    transport = http_class(transport=httpx.MockTransport(handler))
+    sdk = sdk_class(api_key="test", online=True, http_client=transport)
+    try:
+        result = sdk.analysis.list_market_research(scope="starred", page=1, size=18, order_type="desc")
+        if async_mode:
+            await result
+    finally:
+        if async_mode:
+            await transport.aclose()
+        else:
+            transport.close()
+    assert len(seen) == 1 and seen[0].url.params["scope"] == "starred"
+    assert seen[0].url.path == "/api/qdata/v1/analysis/research"
