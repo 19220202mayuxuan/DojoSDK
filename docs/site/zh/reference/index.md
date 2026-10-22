@@ -21,3 +21,6 @@
 
 
 `analysis.update_market_research(research_uid, body=...)` 对应 `PUT /api/qdata/v1/analysis/research/{research_uid}`，同步/异步均返回研究卡详情。`ResearchUpdateRequest` 仅发送显式提供的字段（保留显式 null），例如 `{"visibility":"public","research_type":"daily-event"}` 不会清空 title/description/extra。该方法不追加研究结果，写请求固定 `max_retries=0`；未知响应后应按研究 ID 读取或人工处理，不重放研究结果追加。
+
+
+通用研究列表 `list_market_research(scope="starred")` 查询当前调用者收藏，支持同步/异步。scope 可取 public/mine/starred；公开列表方法仍不接收 scope。排序值为 asc/desc，不含引号。

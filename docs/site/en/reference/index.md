@@ -22,3 +22,6 @@ Use `Dojo(anonymous=True, online=True)` or `AsyncDojo(anonymous=True, online=Tru
 
 
 `analysis.update_market_research(research_uid, body=...)` uses `PUT /api/qdata/v1/analysis/research/{research_uid}` and returns the research aggregate in sync and async clients. `ResearchUpdateRequest` sends only explicitly supplied fields, preserving explicit nulls; `{"visibility":"public","research_type":"daily-event"}` leaves title/description/extra untouched. It does not append a result and forces `max_retries=0`. Resolve an unknown response by reading the research ID or manual review without replaying result appends.
+
+
+Use `list_market_research(scope="starred")` for the current caller's starred research in sync or async mode. Allowed scopes are public/mine/starred; the public-only list still accepts no scope. Sort direction is asc/desc without quotes.
