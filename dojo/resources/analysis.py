@@ -18,6 +18,7 @@ from dojo.types.models import (
     SectorBriefExtractWriteResponse,
     ResearchAggregateResponse,
     ResearchCreateRequest,
+    ResearchUpdateRequest,
     ResearchDeleteResponse,
     ResearchListResponse,
     PublicResearchListResponse,
@@ -135,6 +136,15 @@ class Analysis(SyncAPIResource):
             "/api/qdata/v1/analysis/research",
             cast_to=ResearchAggregateResponse,
             options={"json": model_dump(request, exclude_none=False)},
+        )
+
+    def update_market_research(self, research_uid: str, *, body: ResearchUpdateRequest | dict[str, Any]) -> ResearchAggregateResponse:
+        """Update supplied root fields only; this does not append a research result."""
+        request = body if isinstance(body, ResearchUpdateRequest) else model_validate(ResearchUpdateRequest, body)
+        return self._put(
+            f"/api/qdata/v1/analysis/research/{research_uid}",
+            cast_to=ResearchAggregateResponse,
+            options={"json": model_dump(request, exclude_unset=True), "max_retries": 0},
         )
 
     def get_market_research(self, research_uid: str) -> ResearchAggregateResponse:
@@ -660,6 +670,15 @@ class AsyncAnalysis(AsyncAPIResource):
             "/api/qdata/v1/analysis/research",
             cast_to=ResearchAggregateResponse,
             options={"json": model_dump(request, exclude_none=False)},
+        )
+
+    async def update_market_research(self, research_uid: str, *, body: ResearchUpdateRequest | dict[str, Any]) -> ResearchAggregateResponse:
+        """Update supplied root fields only, without replaying a failed write."""
+        request = body if isinstance(body, ResearchUpdateRequest) else model_validate(ResearchUpdateRequest, body)
+        return await self._put(
+            f"/api/qdata/v1/analysis/research/{research_uid}",
+            cast_to=ResearchAggregateResponse,
+            options={"json": model_dump(request, exclude_unset=True), "max_retries": 0},
         )
 
     async def get_market_research(self, research_uid: str) -> ResearchAggregateResponse:

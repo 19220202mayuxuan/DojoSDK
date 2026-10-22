@@ -18,3 +18,6 @@
 
 
 公开列表无需 API key：`Dojo(anonymous=True, online=True)` 或 `AsyncDojo(anonymous=True, online=True)`。该模式忽略显式/环境 API key，发出请求时移除 Authorization/Cookie，并在本地拒绝 public_research GET 以外的路径和写操作。默认认证模式保持原样。可选 UserId/OrgId 只能由可信服务端构造；匿名访问不需要这些 Header。
+
+
+`analysis.update_market_research(research_uid, body=...)` 对应 `PUT /api/qdata/v1/analysis/research/{research_uid}`，同步/异步均返回研究卡详情。`ResearchUpdateRequest` 仅发送显式提供的字段（保留显式 null），例如 `{"visibility":"public","research_type":"daily-event"}` 不会清空 title/description/extra。该方法不追加研究结果，写请求固定 `max_retries=0`；未知响应后应按研究 ID 读取或人工处理，不重放研究结果追加。

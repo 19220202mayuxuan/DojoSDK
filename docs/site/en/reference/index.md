@@ -19,3 +19,6 @@ Use `client.analysis.list_public_market_research(page=1, size=10)` for strictly 
 
 
 Use `Dojo(anonymous=True, online=True)` or `AsyncDojo(anonymous=True, online=True)` to read the public research list without an API key. This opt-in mode ignores explicit/environment keys, strips Authorization/Cookie, and locally rejects all operations except GET public_research. Default authenticated behavior is unchanged. Optional identity headers must come from a trusted server; anonymous callers need none.
+
+
+`analysis.update_market_research(research_uid, body=...)` uses `PUT /api/qdata/v1/analysis/research/{research_uid}` and returns the research aggregate in sync and async clients. `ResearchUpdateRequest` sends only explicitly supplied fields, preserving explicit nulls; `{"visibility":"public","research_type":"daily-event"}` leaves title/description/extra untouched. It does not append a result and forces `max_retries=0`. Resolve an unknown response by reading the research ID or manual review without replaying result appends.

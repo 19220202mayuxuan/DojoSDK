@@ -666,6 +666,18 @@ class ResearchCreateRequest(ResearchRequestModel):
     initial_result: ResearchResultSnapshotRequest | None = None
 
 
+class ResearchUpdateRequest(ResearchRequestModel):
+    research_type: str | None = Field(default=None, max_length=64)
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    description: str | None = Field(default=None, min_length=1)
+    observation_window: ResearchObservationWindow | None = None
+    sector_id: int | None = Field(default=None, gt=0)
+    status: Literal["tracking", "near_resolution"] | None = None
+    impact: Literal["medium", "high", "severe"] | None = None
+    visibility: Literal["private", "public"] | None = None
+    extra: Dict[str, Any] | None = None
+
+
 class ResearchTimelineReplaceRequest(ResearchRequestModel):
     items: List[ResearchTimelineItem] = Field(default_factory=list)
 

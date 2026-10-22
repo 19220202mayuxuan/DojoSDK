@@ -629,3 +629,70 @@ def test_default_clients_still_require_credentials(monkeypatch, factory):
         factory(online=True)
     with pytest.raises(DojoError, match="requires online access"):
         factory(anonymous=True, online=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("body", [{"visibility": "public", "research_type": "daily-event"}, {"research_type": None}])
+async def test_update_research_sends_only_explicit_fields_and_preserves_identity(async_mode, body):
+    import json
+
+    requests = []
+
+    def transport(request):
+        requests.append(request)
+        return httpx.Response(200, json={"code": 0, "data": {**ROOT_BODY, **body, "owner_user_id": "owner", "timeline": []}})
+
+    http_type, client_type = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    http_client = http_type(transport=httpx.MockTransport(transport))
+    client = client_type(api_key="test", online=True, http_client=http_client, return_raw_data=False, default_headers={"UserId": "user", "OrgId": "org"})
+    try:
+        result = client.analysis.update_market_research(ROOT_BODY["research_uid"], body=body)
+        if async_mode:
+            result = await result
+        assert result.research_uid == ROOT_BODY["research_uid"]
+        assert result.research_type == body["research_type"]
+    finally:
+        if async_mode:
+            await http_client.aclose()
+        else:
+            http_client.close()
+    assert len(requests) == 1
+    assert requests[0].method == "PUT"
+    assert requests[0].url.path == f"/api/qdata/v1/analysis/research/{ROOT_BODY['research_uid']}"
+    assert json.loads(requests[0].content) == body
+    assert requests[0].headers["UserId"] == "user" and requests[0].headers["OrgId"] == "org"
+    assert requests[0].headers["Authorization"] == "Bearer test"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+async def test_update_research_never_retries_server_error(async_mode):
+    requests = []
+
+    def transport(request):
+        requests.append(request)
+        return httpx.Response(500, json={"code": 500, "message": "update outcome unknown"})
+
+    http_type, client_type = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    http_client = http_type(transport=httpx.MockTransport(transport))
+    client = client_type(api_key="test", online=True, max_retries=3, http_client=http_client)
+    try:
+        with pytest.raises(APIStatusError):
+            result = client.analysis.update_market_research(ROOT_BODY["research_uid"], body={"visibility": "public", "research_type": "daily-event"})
+            if async_mode:
+                await result
+    finally:
+        if async_mode:
+            await http_client.aclose()
+        else:
+            http_client.close()
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("body", [{"owner_user_id": "forged"}, {"title": ""}, {"research_type": "x" * 65}, {"visibility": "unlisted"}, {"sector_id": 0}])
+def test_update_research_rejects_invalid_fields_before_sending(body):
+    client = Mock()
+    with pytest.raises(ValidationError):
+        Analysis(client).update_market_research("r-0123456789abcdef", body=body)
+    client.put.assert_not_called()
