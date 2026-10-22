@@ -33,6 +33,7 @@ class AsyncDojo(AsyncAPIClient):
         self,
         *,
         api_key: str | None = None,
+        anonymous: bool = False,
         base_url: str | None = None,
         timeout: Union[float, httpx.Timeout] = 300.0,
         max_retries: int = 1,
@@ -50,6 +51,9 @@ class AsyncDojo(AsyncAPIClient):
         api_key : str, optional
             The token used to authenticate requests. If not provided, it is loaded
             from the DOJO_API_KEY environment variable.
+        anonymous : bool, default False
+            Read only the public research list without credentials. Ignores API keys
+            and strips Authorization/Cookie; protected operations are rejected locally.
         base_url : str, optional
             The base URL of the Dojo API. Defaults to https://api.flowhale.ai.
         timeout : float or httpx.Timeout, default 300.0
@@ -75,8 +79,11 @@ class AsyncDojo(AsyncAPIClient):
 
         self._online = is_online() if online is None else bool(online)
 
-        api_key = api_key or os.environ.get("DOJO_API_KEY")
-        if self._online and not api_key:
+        self._anonymous = anonymous
+        if anonymous and not self._online:
+            raise DojoError("Anonymous mode requires online access")
+        api_key = None if anonymous else (api_key or os.environ.get("DOJO_API_KEY"))
+        if self._online and not api_key and not anonymous:
             raise DojoError("Missing authentication credentials. Please pass an `api_key` or set " "the `DOJO_API_KEY` environment variable.")
         self.api_key = api_key
 
@@ -114,7 +121,7 @@ class AsyncDojo(AsyncAPIClient):
     @property
     def auth_headers(self) -> dict[str, str]:
         """Returns the authorization headers containing the Bearer token."""
-        return {"Authorization": f"Bearer {self.api_key}"}
+        return {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
 
     @property
     def default_headers(self) -> dict[str, str]:
@@ -148,8 +155,7 @@ class AsyncDojo(AsyncAPIClient):
     async def preload_offline_data(self, paths: list[str] | None = None) -> None:
         """Deprecated compatibility wrapper; use ensure_offline_snapshots()."""
         warnings.warn(
-            "preload_offline_data() is deprecated and will be removed in the next "
-            "DojoSDK major release; use ensure_offline_snapshots(paths=...).",
+            "preload_offline_data() is deprecated and will be removed in the next " "DojoSDK major release; use ensure_offline_snapshots(paths=...).",
             DeprecationWarning,
             stacklevel=2,
         )

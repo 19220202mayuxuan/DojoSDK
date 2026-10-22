@@ -567,3 +567,65 @@ def test_create_research_preserves_legacy_private_default_and_optional_type():
     request = ResearchCreateRequest.model_validate({key: value for key, value in ROOT_BODY.items() if key != "visibility"})
     assert request.visibility == "private"
     assert request.research_type is None
+
+
+@pytest.mark.parametrize("ambient_key", [None, "ambient-secret"])
+def test_public_research_anonymous_sync_no_credentials_or_private_access(monkeypatch, ambient_key):
+    from dojo import DojoError
+
+    monkeypatch.delenv("DOJO_API_KEY", raising=False)
+    if ambient_key:
+        monkeypatch.setenv("DOJO_API_KEY", ambient_key)
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"page": 1, "size": 10, "total_num": 0, "total_page": 0, "num": 0, "data": []})
+
+    with httpx.Client(
+        transport=httpx.MockTransport(handler), auth=("user", "password"), headers={"Authorization": "Bearer transport-secret", "Cookie": "session=secret"}
+    ) as transport:
+        client = Dojo(anonymous=True, online=True, http_client=transport, default_headers={"Authorization": "Bearer default-secret"})
+        assert client.api_key is None and not client.auth_headers
+        result = client.analysis.list_public_market_research(is_editor_pick=False, offset=0)
+        assert result["data"] == []
+        assert seen[0].url.path == "/api/qdata/v1/analysis/public_research"
+        assert "authorization" not in seen[0].headers and "cookie" not in seen[0].headers
+        assert seen[0].url.params["is_editor_pick"] == "false"
+        for method, path in [("GET", "/api/qdata/v1/analysis/research"), ("POST", "/api/qdata/v1/analysis/public_research")]:
+            with pytest.raises(DojoError, match="Anonymous clients only"):
+                client.request(method, path, cast_to=dict)
+        assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_public_research_anonymous_async_no_credentials_or_private_access(monkeypatch):
+    from dojo import DojoError
+
+    monkeypatch.delenv("DOJO_API_KEY", raising=False)
+    seen = []
+
+    async def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"page": 1, "size": 10, "total_num": 0, "total_page": 0, "num": 0, "data": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), auth=("user", "password"), headers={"Cookie": "session=secret"}) as transport:
+        client = AsyncDojo(anonymous=True, api_key="ignored-explicit-secret", online=True, http_client=transport)
+        result = await client.analysis.list_public_market_research()
+        assert result["data"] == [] and client.api_key is None
+        assert seen[0].url.path == "/api/qdata/v1/analysis/public_research"
+        assert "authorization" not in seen[0].headers and "cookie" not in seen[0].headers
+        with pytest.raises(DojoError, match="Anonymous clients only"):
+            await client.analysis.list_market_research()
+        assert len(seen) == 1
+
+
+@pytest.mark.parametrize("factory", [Dojo, AsyncDojo])
+def test_default_clients_still_require_credentials(monkeypatch, factory):
+    from dojo import DojoError
+
+    monkeypatch.delenv("DOJO_API_KEY", raising=False)
+    with pytest.raises(DojoError, match="Missing authentication credentials"):
+        factory(online=True)
+    with pytest.raises(DojoError, match="requires online access"):
+        factory(anonymous=True, online=False)

@@ -16,3 +16,6 @@ Use `client.analysis.list_public_market_research(page=1, size=10)` for strictly 
 
 
 `create_market_research(body=...)` accepts optional `research_type` (a string up to 64 characters, or null) in both sync and async clients. `visibility` accepts `private` or `public`; the SDK preserves the existing `private` default and always sends it. Typed research card responses (`return_raw_data=False`) from create, detail, and list expose optional `research_type`, defaulting to None when absent.
+
+
+Use `Dojo(anonymous=True, online=True)` or `AsyncDojo(anonymous=True, online=True)` to read the public research list without an API key. This opt-in mode ignores explicit/environment keys, strips Authorization/Cookie, and locally rejects all operations except GET public_research. Default authenticated behavior is unchanged. Optional identity headers must come from a trusted server; anonymous callers need none.

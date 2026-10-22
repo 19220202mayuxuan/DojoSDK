@@ -10,6 +10,7 @@ import pydantic
 
 from dojo._compat import model_validate, model_construct, BaseModel
 from dojo._exceptions import (
+    DojoError,
     APIError,
     APIConnectionError,
     APITimeoutError,
@@ -89,6 +90,10 @@ class BaseClient:
         }
         headers.update(self._custom_headers)
         return headers
+
+    def _check_anonymous_access(self, method: str, path: str) -> None:
+        if getattr(self, "_anonymous", False) and (method.upper() != "GET" or path != "/api/qdata/v1/analysis/public_research"):
+            raise DojoError("Anonymous clients only support GET /api/qdata/v1/analysis/public_research")
 
     def _prepare_url(self, path: str) -> httpx.URL:
         # Merge path with base url
@@ -266,6 +271,7 @@ class SyncAPIClient(BaseClient):
         cast_to: Type[ResponseT],
         options: dict[str, Any] | None = None,
     ) -> ResponseT:
+        self._check_anonymous_access(method, path)
         options = options or {}
         params = {**self._custom_query, **options.get("params", {})}
         headers = {**self.default_headers, **options.get("headers", {})}
@@ -299,12 +305,16 @@ class SyncAPIClient(BaseClient):
             timeout=timeout,
         )
 
+        if getattr(self, "_anonymous", False):
+            request.headers.pop("Authorization", None)
+            request.headers.pop("Cookie", None)
+
         retries_remaining = options.get("max_retries", self.max_retries)
         retry_count = 0
 
         while True:
             try:
-                response = self._client.send(request)
+                response = self._client.send(request, auth=None) if getattr(self, "_anonymous", False) else self._client.send(request)
                 if self._should_retry(response) and retries_remaining > 0:
                     delay = self._calculate_retry_delay(retry_count, response)
                     time.sleep(delay)
@@ -387,6 +397,7 @@ class AsyncAPIClient(BaseClient):
         cast_to: Type[ResponseT],
         options: dict[str, Any] | None = None,
     ) -> ResponseT:
+        self._check_anonymous_access(method, path)
         options = options or {}
         params = {**self._custom_query, **options.get("params", {})}
         headers = {**self.default_headers, **options.get("headers", {})}
@@ -425,12 +436,16 @@ class AsyncAPIClient(BaseClient):
             timeout=timeout,
         )
 
+        if getattr(self, "_anonymous", False):
+            request.headers.pop("Authorization", None)
+            request.headers.pop("Cookie", None)
+
         retries_remaining = options.get("max_retries", self.max_retries)
         retry_count = 0
 
         while True:
             try:
-                response = await self._client.send(request)
+                response = await self._client.send(request, auth=None) if getattr(self, "_anonymous", False) else await self._client.send(request)
                 if self._should_retry(response) and retries_remaining > 0:
                     delay = self._calculate_retry_delay(retry_count, response)
                     await anyio.sleep(delay)

@@ -15,3 +15,6 @@
 
 
 `create_market_research(body=...)` 的 `research_type` 为可选字符串（最多 64 字符，可为 null），同步和异步客户端均原样发送。`visibility` 支持 `private`、`public`，SDK 为兼容既有调用保留默认 `private`，发送时始终包含该字段。类型化研究卡响应（`return_raw_data=False`）在创建、详情和列表中均提供可选 `research_type`；未返回时为 None。
+
+
+公开列表无需 API key：`Dojo(anonymous=True, online=True)` 或 `AsyncDojo(anonymous=True, online=True)`。该模式忽略显式/环境 API key，发出请求时移除 Authorization/Cookie，并在本地拒绝 public_research GET 以外的路径和写操作。默认认证模式保持原样。可选 UserId/OrgId 只能由可信服务端构造；匿名访问不需要这些 Header。
