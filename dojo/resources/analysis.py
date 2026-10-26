@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 from dojo._compat import model_dump, model_validate
 from dojo.resources.base import SyncAPIResource, AsyncAPIResource
 from dojo.types.models import (
@@ -18,7 +18,9 @@ from dojo.types.models import (
     SectorBriefExtractWriteResponse,
     ResearchAggregateResponse,
     ResearchCreateRequest,
+    ResearchDeleteResponse,
     ResearchListResponse,
+    PublicResearchListResponse,
     ResearchResultListResponse,
     ResearchResultSnapshotRequest,
     ResearchResultWriteResponse,
@@ -118,9 +120,13 @@ class Analysis(SyncAPIResource):
     def list_market_research(
         self,
         *,
-        scope: str | None = None,
+        scope: Literal["public", "mine"] | None = None,
+        is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
+        impact: Literal["medium", "high", "severe"] | None = None,
+        timeline_source: Literal["producer", "manual"] | None = None,
+        visibility: Literal["private", "public"] | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
@@ -131,13 +137,17 @@ class Analysis(SyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchListResponse:
-        """List market research roots visible to the authenticated caller."""
+        """List public roots plus caller-owned roots unless an explicit view is requested."""
         params = {
             key: value
             for key, value in {
                 "scope": scope,
+                "is_editor_pick": is_editor_pick,
                 "sector_id": sector_id,
                 "status": status,
+                "impact": impact,
+                "timeline_source": timeline_source,
+                "visibility": visibility,
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
@@ -153,6 +163,51 @@ class Analysis(SyncAPIResource):
         return self._get(
             "/api/qdata/v1/analysis/research",
             cast_to=ResearchListResponse,
+            options={"params": params},
+        )
+
+    def list_public_market_research(
+        self,
+        *,
+        is_editor_pick: bool | None = None,
+        sector_id: int | None = None,
+        status: str | None = None,
+        impact: Literal["medium", "high", "severe"] | None = None,
+        timeline_source: Literal["producer", "manual"] | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        fuzzy: str | None = None,
+        order_by: str | None = None,
+        order_type: str | None = None,
+        page: int | None = None,
+        size: int | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> PublicResearchListResponse:
+        """List strictly public research; caller-owned private roots are never included."""
+        params = {
+            key: value
+            for key, value in {
+                "is_editor_pick": is_editor_pick,
+                "sector_id": sector_id,
+                "status": status,
+                "impact": impact,
+                "timeline_source": timeline_source,
+                "start_time": start_time,
+                "end_time": end_time,
+                "fuzzy": fuzzy,
+                "order_by": order_by,
+                "order_type": order_type,
+                "page": page,
+                "size": size,
+                "limit": limit,
+                "offset": offset,
+            }.items()
+            if value is not None
+        }
+        return self._get(
+            "/api/qdata/v1/analysis/public_research",
+            cast_to=PublicResearchListResponse,
             options={"params": params},
         )
 
@@ -176,6 +231,13 @@ class Analysis(SyncAPIResource):
             cast_to=ResearchAggregateResponse,
         )
 
+    def delete_market_research(self, research_uid: str) -> ResearchDeleteResponse:
+        """Soft-delete one market research root."""
+        return self._delete(
+            f"/api/qdata/v1/analysis/research/{research_uid}",
+            cast_to=ResearchDeleteResponse,
+        )
+
     def list_market_research_results(
         self,
         research_uid: str,
@@ -190,7 +252,7 @@ class Analysis(SyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchResultListResponse:
-        """List append-only market research results, newest first."""
+        """List market research results, newest first."""
         params = {
             key: value
             for key, value in {
@@ -218,13 +280,28 @@ class Analysis(SyncAPIResource):
         *,
         body: ResearchResultSnapshotRequest | dict[str, Any],
     ) -> ResearchResultWriteResponse:
-        """Append one complete market research result for a job run."""
+        """Append once with HTML outcome and required non-blank outcome_markdown; never retry an uncertain write."""
         request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
         return self._post(
             f"/api/qdata/v1/analysis/research/{research_uid}/results",
             cast_to=ResearchResultWriteResponse,
             # Explicit nulls are part of the producer contract and must be
             # retained in the server's producer_payload.
+            options={"json": model_dump(request, exclude_none=False), "max_retries": 0},
+        )
+
+    def update_market_research_result(
+        self,
+        research_uid: str,
+        result_id: int,
+        *,
+        body: ResearchResultSnapshotRequest | dict[str, Any],
+    ) -> ResearchResultWriteResponse:
+        """Correct a result with a complete snapshot. Keep its job_run_id unchanged."""
+        request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
+        return self._put(
+            f"/api/qdata/v1/analysis/research/{research_uid}/results/{result_id}",
+            cast_to=ResearchResultWriteResponse,
             options={"json": model_dump(request, exclude_none=False)},
         )
 
@@ -344,6 +421,8 @@ class Analysis(SyncAPIResource):
     def get_attribution_factor(
         self,
         *,
+        page: int | None = None,
+        size: int | None = None,
         market: str | None = None,
         sector_id: int | str | None = None,
         scope: str | list[str] | None = None,
@@ -358,6 +437,10 @@ class Analysis(SyncAPIResource):
 
         Parameters
         ----------
+        page : int, optional
+            One-based result page.
+        size : int, optional
+            Records per page, at most 200.
         market : str, optional
             Market filtering (e.g. 'cn', 'hk', 'us').
         sector_id : str, optional
@@ -371,9 +454,13 @@ class Analysis(SyncAPIResource):
         end_time : str, optional
             ISO-8601 end time.
         limit : int, optional
-            Max number of records to return.
+            Deprecated compatibility limit. Use page and size instead.
         """
         params: dict[str, Any] = {}
+        if page is not None:
+            params["page"] = page
+        if size is not None:
+            params["size"] = size
         if market is not None:
             params["market"] = market
         if sector_id is not None:
@@ -416,10 +503,11 @@ class Analysis(SyncAPIResource):
     def list_sector_brief_extract(
         self,
         *,
+        start_date: str,
+        page: int | None = None,
+        size: int | None = None,
         market: str | None = None,
-        sector_id: int | str | None = None,
-        as_of_date: str | None = None,
-        start_date: str | None = None,
+        sector_id: int | None = None,
         end_date: str | None = None,
         limit: int | None = None,
     ) -> SectorBriefExtractListResponse:
@@ -427,9 +515,10 @@ class Analysis(SyncAPIResource):
         params = {
             key: value
             for key, value in {
+                "page": page,
+                "size": size,
                 "market": market,
                 "sector_id": sector_id,
-                "as_of_date": as_of_date,
                 "start_date": start_date,
                 "end_date": end_date,
                 "limit": limit,
@@ -637,9 +726,13 @@ class AsyncAnalysis(AsyncAPIResource):
     async def list_market_research(
         self,
         *,
-        scope: str | None = None,
+        scope: Literal["public", "mine"] | None = None,
+        is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
+        impact: Literal["medium", "high", "severe"] | None = None,
+        timeline_source: Literal["producer", "manual"] | None = None,
+        visibility: Literal["private", "public"] | None = None,
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
@@ -650,13 +743,17 @@ class AsyncAnalysis(AsyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchListResponse:
-        """List market research roots visible to the authenticated caller asynchronously."""
+        """List public roots plus caller-owned roots unless an explicit view is requested asynchronously."""
         params = {
             key: value
             for key, value in {
                 "scope": scope,
+                "is_editor_pick": is_editor_pick,
                 "sector_id": sector_id,
                 "status": status,
+                "impact": impact,
+                "timeline_source": timeline_source,
+                "visibility": visibility,
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
@@ -672,6 +769,51 @@ class AsyncAnalysis(AsyncAPIResource):
         return await self._get(
             "/api/qdata/v1/analysis/research",
             cast_to=ResearchListResponse,
+            options={"params": params},
+        )
+
+    async def list_public_market_research(
+        self,
+        *,
+        is_editor_pick: bool | None = None,
+        sector_id: int | None = None,
+        status: str | None = None,
+        impact: Literal["medium", "high", "severe"] | None = None,
+        timeline_source: Literal["producer", "manual"] | None = None,
+        start_time: str | None = None,
+        end_time: str | None = None,
+        fuzzy: str | None = None,
+        order_by: str | None = None,
+        order_type: str | None = None,
+        page: int | None = None,
+        size: int | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> PublicResearchListResponse:
+        """List strictly public research; caller-owned private roots are never included."""
+        params = {
+            key: value
+            for key, value in {
+                "is_editor_pick": is_editor_pick,
+                "sector_id": sector_id,
+                "status": status,
+                "impact": impact,
+                "timeline_source": timeline_source,
+                "start_time": start_time,
+                "end_time": end_time,
+                "fuzzy": fuzzy,
+                "order_by": order_by,
+                "order_type": order_type,
+                "page": page,
+                "size": size,
+                "limit": limit,
+                "offset": offset,
+            }.items()
+            if value is not None
+        }
+        return await self._get(
+            "/api/qdata/v1/analysis/public_research",
+            cast_to=PublicResearchListResponse,
             options={"params": params},
         )
 
@@ -695,6 +837,13 @@ class AsyncAnalysis(AsyncAPIResource):
             cast_to=ResearchAggregateResponse,
         )
 
+    async def delete_market_research(self, research_uid: str) -> ResearchDeleteResponse:
+        """Soft-delete one market research root."""
+        return await self._delete(
+            f"/api/qdata/v1/analysis/research/{research_uid}",
+            cast_to=ResearchDeleteResponse,
+        )
+
     async def list_market_research_results(
         self,
         research_uid: str,
@@ -709,7 +858,7 @@ class AsyncAnalysis(AsyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchResultListResponse:
-        """List append-only market research results, newest first asynchronously."""
+        """List market research results, newest first asynchronously."""
         params = {
             key: value
             for key, value in {
@@ -737,10 +886,25 @@ class AsyncAnalysis(AsyncAPIResource):
         *,
         body: ResearchResultSnapshotRequest | dict[str, Any],
     ) -> ResearchResultWriteResponse:
-        """Append one complete market research result for a job run asynchronously."""
+        """Append once with HTML outcome and required non-blank outcome_markdown asynchronously, without retries."""
         request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
         return await self._post(
             f"/api/qdata/v1/analysis/research/{research_uid}/results",
+            cast_to=ResearchResultWriteResponse,
+            options={"json": model_dump(request, exclude_none=False), "max_retries": 0},
+        )
+
+    async def update_market_research_result(
+        self,
+        research_uid: str,
+        result_id: int,
+        *,
+        body: ResearchResultSnapshotRequest | dict[str, Any],
+    ) -> ResearchResultWriteResponse:
+        """Correct a result with a complete snapshot. Keep its job_run_id unchanged."""
+        request = body if isinstance(body, ResearchResultSnapshotRequest) else model_validate(ResearchResultSnapshotRequest, body)
+        return await self._put(
+            f"/api/qdata/v1/analysis/research/{research_uid}/results/{result_id}",
             cast_to=ResearchResultWriteResponse,
             options={"json": model_dump(request, exclude_none=False)},
         )
@@ -861,8 +1025,10 @@ class AsyncAnalysis(AsyncAPIResource):
     async def get_attribution_factor(
         self,
         *,
+        page: int | None = None,
+        size: int | None = None,
         market: str | None = None,
-        sector_id: str | None = None,
+        sector_id: int | str | None = None,
         scope: str | list[str] | None = None,
         factor_topic: str | None = None,
         role: str | None = None,
@@ -875,6 +1041,10 @@ class AsyncAnalysis(AsyncAPIResource):
 
         Parameters
         ----------
+        page : int, optional
+            One-based result page.
+        size : int, optional
+            Records per page, at most 200.
         market : str, optional
             Market filtering (e.g. 'cn', 'hk', 'us').
         sector_id : str, optional
@@ -888,9 +1058,13 @@ class AsyncAnalysis(AsyncAPIResource):
         end_time : str, optional
             ISO-8601 end time.
         limit : int, optional
-            Max number of records to return.
+            Deprecated compatibility limit. Use page and size instead.
         """
         params: dict[str, Any] = {}
+        if page is not None:
+            params["page"] = page
+        if size is not None:
+            params["size"] = size
         if market is not None:
             params["market"] = market
         if sector_id is not None:
@@ -933,10 +1107,11 @@ class AsyncAnalysis(AsyncAPIResource):
     async def list_sector_brief_extract(
         self,
         *,
+        start_date: str,
+        page: int | None = None,
+        size: int | None = None,
         market: str | None = None,
-        sector_id: str | None = None,
-        as_of_date: str | None = None,
-        start_date: str | None = None,
+        sector_id: int | None = None,
         end_date: str | None = None,
         limit: int | None = None,
     ) -> SectorBriefExtractListResponse:
@@ -944,9 +1119,10 @@ class AsyncAnalysis(AsyncAPIResource):
         params = {
             key: value
             for key, value in {
+                "page": page,
+                "size": size,
                 "market": market,
                 "sector_id": sector_id,
-                "as_of_date": as_of_date,
                 "start_date": start_date,
                 "end_date": end_date,
                 "limit": limit,

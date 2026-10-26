@@ -13,6 +13,22 @@
     *   支持离线拉取数据：通过 HuggingFace 或 ModelScope 下载本地离线文件并解析 (Parquet 格式)，主要逻辑在 `huggingface.py` 及相关模块中。
 *   **`dojo/resources/`**: 业务逻辑模块。每个文件对应一类 API 端点 (如 `stocks.py`, `forex.py`, `macro.py` 等)，负责具体接口的路径定义、参数拼装和调用。
 *   **`dojo/types/`**: 数据类型定义。所有 API 接口的入参和出参必须在这里使用 `Pydantic` 进行严格类型校验与序列化定义。
+*   **`docs/`**: 文档治理与 MkDocs 源码（详见下方"文档分类"规则）。
+    *   `README.md`: 仅供维护者阅读的文档治理说明。
+    *   `site/`: 唯一可发布文档源码目录（`assets/`、`zh/`、`en/`）。
+*   **`scripts/`**: 独立脚本（如 `compare_openapi.py`、`verify_kline_snapshot_backend.py`）。
+
+## 文档分类 (Documentation Classification, MANDATORY)
+
+- 所有可发布的 Markdown 一律放在 `docs/site/{zh,en}/` 下；**禁止在 `docs/` 根目录新增独立设计或计划文档**。
+- 分类边界：
+  - `design/`：某个具体子系统当前有效的设计、契约和行为边界。
+  - `reference/`：调用方可依赖的稳定接口、弃用安排和移除门槛。
+  - `development/`：如何开发、测试、验证和发布。
+  - `plans/`：尚未完成的方案、迁移顺序、backlog 或历史决策；它不是当前 API 契约。
+  - `assets/`：只存放站点共享静态资源（如 `assets/openapi/qdata_openapi.json`），不存放 Markdown 正文。
+- 中英文页面保持相同的相对路径；新增或移动已发布页面时，必须同步更新根目录 `mkdocs.yml` 的导航。
+- 计划实施完成后，把长期有效的结论迁移到 `design/`、`reference/` 或 `development/`，并删除或归档失效计划。不要让同一份权威说明同时存在于多个分类。
 
 ## 2. 核心设计理念 (Core Design)
 *   **多数据源架构**: 接口拉取数据不直接硬编码 HTTP 请求，而是通过统一的 `DataSource` 协议 (`fetch` 和 `fetch_df` 方法)，使得 SDK 可以在线上的 API 请求和离线数据集模式之间透明、无缝地切换。

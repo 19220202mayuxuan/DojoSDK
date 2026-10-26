@@ -1,6 +1,17 @@
+import os
+
 import pytest
 import dojo
 from dojo._exceptions import APIStatusError
+
+
+pytestmark = [
+    pytest.mark.online_integration,
+    pytest.mark.skipif(
+        os.environ.get("DOJO_RUN_ONLINE_TESTS") != "1",
+        reason="set DOJO_RUN_ONLINE_TESTS=1 to run live API integration tests",
+    ),
+]
 
 
 async def run_safe(coro):
@@ -14,7 +25,7 @@ async def run_safe(coro):
 @pytest.fixture
 def client():
     # Construct AsyncDojo client. It loads API key and base URL from env variables (sourced from .env)
-    return dojo.AsyncDojo()
+    return dojo.AsyncDojo(online=True)
 
 
 @pytest.mark.asyncio

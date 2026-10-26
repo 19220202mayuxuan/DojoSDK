@@ -40,6 +40,21 @@ class APIResponse:
         self.parsed_data = parsed_data
 
 
+class StructuredOfflineResponse(httpx.Response):
+    """HTTP-compatible metadata wrapper backed by an existing Python payload."""
+
+    def __init__(self, *, payload: Any, request: httpx.Request) -> None:
+        super().__init__(
+            200,
+            headers={"X-Dojo-Data-Source": "offline"},
+            request=request,
+        )
+        self.structured_data = payload
+
+    def json(self, **_kwargs: Any) -> Any:
+        return self.structured_data
+
+
 class BaseClient:
     def __init__(
         self,
@@ -86,6 +101,8 @@ class BaseClient:
         err_msg = f"Error code: {code}"
         if isinstance(body, dict) and "detail" in body:
             err_msg += f" - {body['detail']}"
+        elif isinstance(body, dict) and "message" in body:
+            err_msg += f" - {body['message']}"
         elif isinstance(body, str) and body:
             err_msg += f" - {body}"
 
@@ -153,6 +170,17 @@ class BaseClient:
         except Exception as e:
             raise APIError(f"Failed to parse response JSON: {e}")
 
+        return self._process_data(data, cast_to, response=response)
+
+    def _process_data(
+        self,
+        data: Any,
+        cast_to: Type[ResponseT],
+        *,
+        response: httpx.Response | None = None,
+    ) -> ResponseT:
+        """Parse an already-structured payload without a JSON encode/decode cycle."""
+
         if cast_to is None or cast_to is type(None):
             return cast(ResponseT, None)
 
@@ -162,9 +190,10 @@ class BaseClient:
             code = data.get("code")
             if str(code) not in ("0", "200", "00000", "success"):
                 msg = data.get("msg", data.get("message", f"API business error with code {code}"))
+                error_response = response if response is not None else httpx.Response(200)
                 raise APIStatusError(
                     f"Business Error: {msg} (code: {code})",
-                    response=response,
+                    response=error_response,
                     body=data,
                 )
             if "data" in data:
@@ -218,7 +247,10 @@ class BaseClient:
                 log.warning(f"Validation failed for {cast_to.__name__}: {err}. Falling back to model construction.")
                 if isinstance(payload, dict):
                     return model_construct(cast_to, **payload)
-                raise APIResponseValidationError(response=response, body=data) from err
+                raise APIResponseValidationError(
+                    response=response if response is not None else httpx.Response(200),
+                    body=data,
+                ) from err
 
         return cast(ResponseT, data)
 
@@ -248,13 +280,12 @@ class SyncAPIClient(BaseClient):
                 params=params,
                 json=json_data,
             )
-            response = httpx.Response(
-                200,
-                json=payload,
-                request=httpx.Request(method, self._prepare_url(path)),
-            )
-            parsed_data = self._process_response(response, cast_to)
+            parsed_data = self._process_data(payload, cast_to)
             if is_raw:
+                response = StructuredOfflineResponse(
+                    payload=payload,
+                    request=httpx.Request(method, self._prepare_url(path)),
+                )
                 return cast(ResponseT, APIResponse(response, parsed_data))
             return parsed_data
 
@@ -268,7 +299,7 @@ class SyncAPIClient(BaseClient):
             timeout=timeout,
         )
 
-        retries_remaining = self.max_retries
+        retries_remaining = options.get("max_retries", self.max_retries)
         retry_count = 0
 
         while True:
@@ -375,13 +406,12 @@ class AsyncAPIClient(BaseClient):
                     json=json_data,
                 )
             )
-            response = httpx.Response(
-                200,
-                json=payload,
-                request=httpx.Request(method, self._prepare_url(path)),
-            )
-            parsed_data = self._process_response(response, cast_to)
+            parsed_data = self._process_data(payload, cast_to)
             if is_raw:
+                response = StructuredOfflineResponse(
+                    payload=payload,
+                    request=httpx.Request(method, self._prepare_url(path)),
+                )
                 return cast(ResponseT, APIResponse(response, parsed_data))
             return parsed_data
 
@@ -395,7 +425,7 @@ class AsyncAPIClient(BaseClient):
             timeout=timeout,
         )
 
-        retries_remaining = self.max_retries
+        retries_remaining = options.get("max_retries", self.max_retries)
         retry_count = 0
 
         while True:

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Union
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from dojo._compat import PYDANTIC_V1
+from dojo.types.snapshot import SnapshotMetadata
 
 
 class DojoModel(BaseModel):
@@ -154,7 +155,10 @@ class MacroSentimentResponse(DojoModel):
 # --- Benchmark ---
 class BenchmarkKLineResponse(DojoModel):
     total_num: int
-    data: List[Dict[str, Any]]
+    data: Union[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]
+
+
+BenchmarkKlineResponse = BenchmarkKLineResponse
 
 
 class BenchmarkPriceResponse(DojoModel):
@@ -303,8 +307,8 @@ class YStockInfoResponse(DojoModel):
 
 
 class StockKlineResponseItem(DojoModel):
-    symbol: str
-    kline_t: str
+    symbol: str | None = None
+    kline_t: str | None = None
     bar_time: str
     open: float | None = None
     high: float | None = None
@@ -319,9 +323,18 @@ class StockKlineResponseItem(DojoModel):
     splits: float | None = None
 
 
+class Kline(StockKlineResponseItem):
+    """One stock K-line row returned by the snapshot-aware batch API."""
+
+
+class KlineBatchResult(DojoModel):
+    rows: List[Kline]
+    snapshot: SnapshotMetadata
+
+
 class StockKlineResponse(DojoModel):
     total_num: int
-    data: List[StockKlineResponseItem]
+    data: Union[List[StockKlineResponseItem], Dict[str, List[StockKlineResponseItem]]]
 
 
 class StockKlineCSResponse(DojoModel):
@@ -362,7 +375,7 @@ class StockEventRemindResponse(DojoModel):
 
 class StockFinIndicatorsResponse(DojoModel):
     total_num: int | None = None
-    data: List[Dict[str, Any]] | None = None
+    data: Union[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]] | None = None
 
 
 class StockFinCalendarResponse(DojoModel):
@@ -424,13 +437,14 @@ class ConstituentsObservation(StrictDojoModel):
 
 
 class ConstituentsQuery(StrictDojoModel):
+    trade_date: date | None = None
     market: str | None = None
     level1_id: int | None = None
     level2_id: int | None = None
     level3_id: int | None = None
     ticker: str | None = None
     role: str | None = None
-    limit: int = Field(default=100, ge=1, le=500)
+    limit: int = Field(default=100, ge=1, le=5000)
     offset: int = Field(default=0, ge=0)
 
 
@@ -622,10 +636,13 @@ class ResearchTimelineResponse(ResearchTimelineItem):
 class ResearchResultSnapshotRequest(ResearchRequestModel):
     research_uid: str | None = None
     task_name: str
+    title: str = Field(default="", max_length=512)
+    description: str = ""
     observation_window: ResearchObservationWindow
     probability_tier: str | None = None
     probability_pct: int | None = Field(default=None, ge=0, le=100)
-    outcome: str
+    outcome: str = Field(description="HTML version of the research report.")
+    outcome_markdown: str = Field(min_length=1, pattern=r"\S", description="Required non-blank Markdown version of the same research report.")
     timeline: List[ResearchTimelineItem] = Field(default_factory=list)
     used_event_uids: List[str] = Field(default_factory=list)
     generation_time: str
@@ -669,10 +686,13 @@ class ResearchResultResponse(DojoModel):
     result_id: int
     research_uid: str
     task_name: str
+    title: str = ""
+    description: str = ""
     observation_window: ResearchObservationWindow
     probability_tier: str | None = None
     probability_pct: int | None = None
-    outcome: str
+    outcome: str = Field(description="HTML version of the research report.")
+    outcome_markdown: str = Field(default="", description="Markdown version of the same research report.")
     generation_time: str
     job_run_id: str
     producer_payload: Dict[str, Any] = Field(default_factory=dict)
@@ -683,10 +703,10 @@ class ResearchCardResponse(DojoModel):
     research_uid: str
     title: str
     description: str
-    observation_window: ResearchObservationWindow
-    sector_id: int
+    observation_window: ResearchObservationWindow | None = Field(...)
+    sector_id: int | None = Field(...)
     status: Literal["tracking", "near_resolution"]
-    impact: Literal["medium", "high", "severe"]
+    impact: Literal["medium", "high", "severe"] | None = Field(...)
     visibility: Literal["private", "public"]
     owner_user_id: str
     timeline_source: Literal["producer", "manual"]
@@ -708,6 +728,20 @@ class ResearchListResponse(DojoModel):
     total_page: int
     num: int
     data: List[ResearchCardResponse] = Field(default_factory=list)
+
+
+class PublicResearchCardResponse(ResearchCardResponse):
+    visibility: Literal["public"]
+    is_editor_pick: bool
+
+
+class PublicResearchListResponse(ResearchListResponse):
+    data: List[PublicResearchCardResponse] = Field(default_factory=list)
+
+
+class ResearchDeleteResponse(DojoModel):
+    result: str = "success"
+    research_uid: str
 
 
 class ResearchResultListResponse(DojoModel):
@@ -886,6 +920,7 @@ MarketResearchResultResponse = ResearchResultResponse
 MarketResearchCardResponse = ResearchCardResponse
 MarketResearchAggregateResponse = ResearchAggregateResponse
 MarketResearchListResponse = ResearchListResponse
+MarketResearchDeleteResponse = ResearchDeleteResponse
 MarketResearchResultListResponse = ResearchResultListResponse
 MarketResearchResultWriteResponse = ResearchResultWriteResponse
 
@@ -950,7 +985,11 @@ class AttributionFactorItem(DojoModel):
 
 
 class AttributionFactorResponse(DojoModel):
-    total_num: int | None = None
+    page: int
+    size: int
+    total_num: int
+    total_page: int
+    num: int
     data: List[AttributionFactorItem] | List[Dict[str, Any]] | None = None
 
 
@@ -1067,30 +1106,34 @@ class SectorBriefComponent(DojoModel):
 
 class SectorBriefExtractWriteItem(DojoModel):
     market: Literal["us", "cn", "hk"]
-    sector_id: str = Field(min_length=1, max_length=128)
+    sector_ref: str = Field(min_length=1, max_length=64, pattern=r"^\d+/\d+/\d+$")
+    sector_id: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^\d+/\d+/\d+$")
     as_of_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    brief_uid: str | None = Field(default=None, min_length=1, max_length=128)
-    key_drivers: List[SectorBriefDriver] = Field(max_length=5)
-    key_risks: List[SectorBriefRisk] = Field(max_length=4)
-    top_components: List[SectorBriefComponent] = Field(max_length=8)
+    key_drivers: List[SectorBriefDriver] = Field(min_length=1, max_length=5)
+    key_risks: List[SectorBriefRisk] = Field(default_factory=list, max_length=4)
+    top_components: List[SectorBriefComponent] = Field(min_length=1, max_length=8)
 
 
 class SectorBriefExtractItem(SectorBriefExtractWriteItem):
-    id: int | None = None
+    id: int
+    sector_id: int
     generation_time: str | None = None
-    created_at: str | None = None
-    updated_at: str | None = None
 
 
 class SectorBriefExtractListResponse(DojoModel):
-    total_num: int | None = None
+    page: int
+    size: int
+    total_num: int
+    total_page: int
+    num: int
     data: List[SectorBriefExtractItem] | List[Dict[str, Any]] | None = None
 
 
 class SectorBriefExtractWriteRequest(DojoModel):
     items: List[SectorBriefExtractWriteItem] = Field(min_length=1, max_length=10000)
-    generation_time: str | None = None
+    generation_time: str
 
 
 class SectorBriefExtractWriteResponse(DojoModel):
     data: List[SectorBriefExtractItem] | None = None
+    receipt: Dict[str, Any] | None = None

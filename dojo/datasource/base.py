@@ -4,7 +4,7 @@ from typing import Any, Protocol
 
 
 class DataSource(Protocol):
-    """Unified data source protocol: resolves a request into an API-equivalent JSON envelope."""
+    """Resolve requests into API-equivalent structured Python envelopes."""
 
     def fetch(
         self,
@@ -14,7 +14,7 @@ class DataSource(Protocol):
         params: dict[str, Any],
         json: Any | None = None,
     ) -> Any:
-        """Returns a dictionary shaped like {"code":0, "data":[...]}, or bare list/dict."""
+        """Return a structured dictionary without HTTP/JSON serialization."""
         ...
 
     def fetch_df(
@@ -23,5 +23,5 @@ class DataSource(Protocol):
         path: str,
         params: dict[str, Any] | None = None,
     ) -> Any:
-        """Returns a Pandas DataFrame. Currently only fully supported by HuggingFace offline datasource."""
+        """Return a bounded Pandas DataFrame for offline compatibility."""
         ...

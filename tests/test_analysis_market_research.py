@@ -1,23 +1,31 @@
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
+from dojo._exceptions import APIStatusError, APITimeoutError
 from pydantic import ValidationError
 
+from dojo import AsyncDojo, Dojo, NotFoundError, PermissionDeniedError
 from dojo.resources.analysis import Analysis, AsyncAnalysis
 from dojo.types.models import (
     ResearchAggregateResponse,
+    ResearchDeleteResponse,
     ResearchListResponse,
     ResearchResultListResponse,
+    ResearchResultSnapshotRequest,
+    ResearchResultResponse,
     ResearchResultWriteResponse,
 )
 
-
 RESULT_BODY = {
     "task_name": "research-result",
+    "title": "Energy supply result",
+    "description": "Producer result metadata.",
     "observation_window": {"start_date": "2026-09-14", "end_date": "2026-09-28"},
     "probability_tier": None,
     "probability_pct": None,
-    "outcome": "Evidence is currently insufficient for a reliable probability.",
+    "outcome": "<p>Evidence is currently insufficient for a reliable probability.</p>",
+    "outcome_markdown": "Evidence is currently insufficient for a reliable probability.",
     "timeline": [],
     "used_event_uids": [],
     "generation_time": "2026-09-14T10:00:00Z",
@@ -38,16 +46,34 @@ ROOT_BODY = {
 }
 
 
+def test_result_metadata_defaults_and_response_parsing() -> None:
+    legacy = {key: value for key, value in RESULT_BODY.items() if key not in {"title", "description"}}
+    request = ResearchResultSnapshotRequest.model_validate(legacy)
+    assert request.title == "" and request.description == ""
+    assert request.outcome_markdown == RESULT_BODY["outcome_markdown"]
+    response = ResearchResultResponse.model_validate({**RESULT_BODY, "result_id": 901, "research_uid": "research-1"})
+    assert response.title == RESULT_BODY["title"]
+    assert response.description == RESULT_BODY["description"]
+    assert response.outcome == RESULT_BODY["outcome"]
+    assert response.outcome_markdown == RESULT_BODY["outcome_markdown"]
+    legacy_response = ResearchResultResponse.model_validate(
+        {**{key: value for key, value in legacy.items() if key != "outcome_markdown"}, "result_id": 902, "research_uid": "research-1"}
+    )
+    assert legacy_response.outcome_markdown == ""
+    with pytest.raises(ValidationError):
+        ResearchResultSnapshotRequest.model_validate({**RESULT_BODY, "title": "x" * 513})
+
+
 def test_market_research_sync_routes_and_preserves_nullable_result_fields() -> None:
     client = Mock()
     client.get.return_value = ResearchListResponse(page=1, size=10, total_num=0, total_page=0, num=0, data=[])
     client.post.return_value = ResearchResultWriteResponse(result_id=901)
 
-    Analysis(client).list_market_research(scope="all", sector_id=42, status="tracking", limit=25, offset=5)
+    Analysis(client).list_market_research(scope="mine", is_editor_pick=True, sector_id=42, status="tracking", limit=25, offset=5)
     client.get.assert_called_once_with(
         "/api/qdata/v1/analysis/research",
         cast_to=ResearchListResponse,
-        options={"params": {"scope": "all", "sector_id": 42, "status": "tracking", "limit": 25, "offset": 5}},
+        options={"params": {"scope": "mine", "is_editor_pick": True, "sector_id": 42, "status": "tracking", "limit": 25, "offset": 5}},
     )
 
     client.reset_mock()
@@ -60,7 +86,7 @@ def test_market_research_sync_routes_and_preserves_nullable_result_fields() -> N
     client.post.assert_called_once_with(
         "/api/qdata/v1/analysis/research/research-energy-2026-001/results",
         cast_to=ResearchResultWriteResponse,
-        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}},
+        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}, "max_retries": 0},
     )
 
 
@@ -212,7 +238,7 @@ async def test_market_research_async_result_matches_sync_wire_contract() -> None
     client.post.assert_awaited_once_with(
         "/api/qdata/v1/analysis/research/research-energy-2026-001/results",
         cast_to=ResearchResultWriteResponse,
-        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}},
+        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}, "max_retries": 0},
     )
 
 
@@ -224,16 +250,261 @@ async def test_market_research_async_root_and_list_routes() -> None:
     client.put = AsyncMock()
 
     analysis = AsyncAnalysis(client)
-    await analysis.list_market_research(scope="all")
+    await analysis.list_market_research(scope="mine", is_editor_pick=False)
     client.get.assert_awaited_once_with(
         "/api/qdata/v1/analysis/research",
         cast_to=ResearchListResponse,
-        options={"params": {"scope": "all"}},
+        options={"params": {"scope": "mine", "is_editor_pick": False}},
     )
 
     await analysis.create_market_research_result(ROOT_BODY["research_uid"], body=RESULT_BODY)
     client.post.assert_awaited_once_with(
         "/api/qdata/v1/analysis/research/research-energy-2026-001/results",
         cast_to=ResearchResultWriteResponse,
-        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}},
+        options={"json": {**RESULT_BODY, "research_uid": None, "extra": {}}, "max_retries": 0},
     )
+
+
+@pytest.mark.parametrize("typed_body", [False, True])
+def test_update_market_research_result_sync(typed_body: bool) -> None:
+    client = Mock()
+    client.put.return_value = ResearchResultWriteResponse(result_id=901)
+    payload = {**RESULT_BODY, "extra": {"source": "correction"}}
+    body = ResearchResultSnapshotRequest.model_validate(payload) if typed_body else payload
+
+    result = Analysis(client).update_market_research_result("research-1", 901, body=body)
+
+    assert result.result_id == 901
+    client.put.assert_called_once_with(
+        "/api/qdata/v1/analysis/research/research-1/results/901",
+        cast_to=ResearchResultWriteResponse,
+        options={"json": {**payload, "research_uid": None}},
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("typed_body", [False, True])
+async def test_update_market_research_result_async(typed_body: bool) -> None:
+    client = Mock()
+    client.put = AsyncMock(return_value=ResearchResultWriteResponse(result_id=901))
+    payload = {**RESULT_BODY, "extra": {"source": "correction"}}
+    body = ResearchResultSnapshotRequest.model_validate(payload) if typed_body else payload
+
+    result = await AsyncAnalysis(client).update_market_research_result("research-1", 901, body=body)
+
+    assert result.result_id == 901
+    client.put.assert_awaited_once_with(
+        "/api/qdata/v1/analysis/research/research-1/results/901",
+        cast_to=ResearchResultWriteResponse,
+        options={"json": {**payload, "research_uid": None}},
+    )
+
+
+def test_update_market_research_result_validates_before_sending() -> None:
+    client = Mock()
+    with pytest.raises(ValidationError):
+        Analysis(client).update_market_research_result("research-1", 901, body={**RESULT_BODY, "decision_logic": "legacy"})
+    client.put.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_market_research_result_async_validates_before_sending() -> None:
+    client = Mock()
+    client.put = AsyncMock()
+    with pytest.raises(ValidationError):
+        await AsyncAnalysis(client).update_market_research_result("research-1", 901, body={**RESULT_BODY, "decision_logic": "legacy"})
+    client.put.assert_not_awaited()
+
+
+@pytest.mark.parametrize("return_raw_data", [False, True])
+def test_delete_market_research_sync_http_contract(monkeypatch, return_raw_data: bool) -> None:
+    monkeypatch.setenv("DOJO_ONLINE", "true")
+    payload = {"result": "success", "research_uid": ROOT_BODY["research_uid"]}
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"code": 0, "data": payload})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = Dojo(api_key="test", base_url="https://dojo.test", http_client=http_client, return_raw_data=return_raw_data)
+        response = client.analysis.delete_market_research(ROOT_BODY["research_uid"])
+
+    assert len(seen) == 1
+    assert seen[0].method == "DELETE"
+    assert str(seen[0].url) == "https://dojo.test/api/qdata/v1/analysis/research/research-energy-2026-001"
+    assert seen[0].content == b""
+    assert seen[0].headers["Authorization"] == "Bearer test"
+    if return_raw_data:
+        assert response == payload
+    else:
+        assert isinstance(response, ResearchDeleteResponse)
+        assert response.model_dump() == payload
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("return_raw_data", [False, True])
+async def test_delete_market_research_async_http_contract(monkeypatch, return_raw_data: bool) -> None:
+    monkeypatch.setenv("DOJO_ONLINE", "true")
+    payload = {"result": "success", "research_uid": ROOT_BODY["research_uid"]}
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"code": 0, "data": payload})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = AsyncDojo(api_key="test", base_url="https://dojo.test", http_client=http_client, return_raw_data=return_raw_data)
+        response = await client.analysis.delete_market_research(ROOT_BODY["research_uid"])
+
+    assert len(seen) == 1
+    assert seen[0].method == "DELETE"
+    assert str(seen[0].url) == "https://dojo.test/api/qdata/v1/analysis/research/research-energy-2026-001"
+    assert seen[0].content == b""
+    assert seen[0].headers["Authorization"] == "Bearer test"
+    if return_raw_data:
+        assert response == payload
+    else:
+        assert isinstance(response, ResearchDeleteResponse)
+        assert response.model_dump() == payload
+
+
+@pytest.mark.parametrize("status_code,error_type", [(403, PermissionDeniedError), (404, NotFoundError)])
+def test_delete_market_research_sync_propagates_api_errors(monkeypatch, status_code, error_type) -> None:
+    monkeypatch.setenv("DOJO_ONLINE", "true")
+    body = {"detail": "research cannot be deleted"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json=body)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = Dojo(api_key="test", base_url="https://dojo.test", http_client=http_client, max_retries=0)
+        with pytest.raises(error_type) as exc_info:
+            client.analysis.delete_market_research(ROOT_BODY["research_uid"])
+
+    assert exc_info.value.status_code == status_code
+    assert exc_info.value.body == body
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status_code,error_type", [(403, PermissionDeniedError), (404, NotFoundError)])
+async def test_delete_market_research_async_propagates_api_errors(monkeypatch, status_code, error_type) -> None:
+    monkeypatch.setenv("DOJO_ONLINE", "true")
+    body = {"detail": "research cannot be deleted"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, json=body)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http_client:
+        client = AsyncDojo(api_key="test", base_url="https://dojo.test", http_client=http_client, max_retries=0)
+        with pytest.raises(error_type) as exc_info:
+            await client.analysis.delete_market_research(ROOT_BODY["research_uid"])
+
+    assert exc_info.value.status_code == status_code
+    assert exc_info.value.body == body
+
+
+@pytest.mark.parametrize("value", [None, "", " \n\t"])
+def test_result_request_requires_non_blank_markdown(value) -> None:
+    for body in ({key: item for key, item in RESULT_BODY.items() if key != "outcome_markdown"}, {**RESULT_BODY, "outcome_markdown": value}):
+        with pytest.raises(ValidationError, match="outcome_markdown"):
+            ResearchResultSnapshotRequest.model_validate(body)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("failure", [500, 422, "timeout"])
+async def test_result_append_never_retries_and_reads_keep_retry_configuration(async_mode, failure):
+    requests = []
+
+    def transport(request):
+        requests.append(request)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("uncertain write", request=request)
+        return httpx.Response(failure, json={"message": "outcome_markdown diagnostic", "code": failure})
+
+    http_type, client_type = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    client = client_type(api_key="test", online=True, max_retries=3, http_client=http_type(transport=httpx.MockTransport(transport)))
+    client._calculate_retry_delay = lambda *args: 0
+    try:
+        with pytest.raises((APIStatusError, APITimeoutError)) as caught:
+            result = client.analysis.create_market_research_result("research-1", body=RESULT_BODY)
+            if async_mode:
+                await result
+        assert len(requests) == 1
+        if failure != "timeout":
+            assert "outcome_markdown diagnostic" in str(caught.value)
+        with pytest.raises((APIStatusError, APITimeoutError)):
+            result = client.get("/read-probe", cast_to=dict)
+            if async_mode:
+                await result
+        assert len(requests) == (2 if failure == 422 else 5)
+        assert client.max_retries == 3
+    finally:
+        if async_mode:
+            await client._client.aclose()
+        else:
+            client._client.close()
+
+
+@pytest.mark.parametrize("field", ["observation_window", "sector_id", "impact"])
+def test_public_research_nullable_fields_remain_required(field):
+    from dojo.types.models import PublicResearchCardResponse, ResearchCardResponse
+
+    card = {**ROOT_BODY, "owner_user_id": "owner", "is_editor_pick": False, field: None}
+    assert getattr(PublicResearchCardResponse.model_validate(card), field) is None
+    assert getattr(ResearchCardResponse.model_validate(card), field) is None
+    del card[field]
+    with pytest.raises(ValidationError):
+        PublicResearchCardResponse.model_validate(card)
+
+
+def test_public_research_contract_and_sync_route():
+    from dojo.types import PublicResearchCardResponse, PublicResearchListResponse
+
+    card = {**ROOT_BODY, "owner_user_id": "owner", "is_editor_pick": False}
+    assert PublicResearchCardResponse.model_validate(card).is_editor_pick is False
+    with pytest.raises(ValidationError):
+        PublicResearchCardResponse.model_validate({**card, "visibility": "private"})
+    with pytest.raises(ValidationError):
+        PublicResearchCardResponse.model_validate({k: v for k, v in card.items() if k != "is_editor_pick"})
+    client = Mock()
+    params = dict(page=1, size=10, is_editor_pick=False, offset=0, limit=25, impact="high", timeline_source="manual")
+    Analysis(client).list_public_market_research(**params)
+    client.get.assert_called_once_with("/api/qdata/v1/analysis/public_research", cast_to=PublicResearchListResponse, options={"params": params})
+    with pytest.raises(TypeError):
+        Analysis(client).list_public_market_research(scope="mine")
+    with pytest.raises(TypeError):
+        Analysis(client).list_public_market_research(visibility="private")
+    client.reset_mock()
+    Analysis(client).list_market_research(impact="high", timeline_source="producer", visibility="private")
+    assert client.get.call_args.kwargs["options"]["params"] == dict(impact="high", timeline_source="producer", visibility="private")
+
+
+@pytest.mark.asyncio
+async def test_public_research_async_route_and_common_filter_parity():
+    from dojo.types import PublicResearchListResponse
+
+    client = Mock()
+    client.get = AsyncMock()
+    params = dict(
+        page=2,
+        size=18,
+        is_editor_pick=False,
+        offset=0,
+        fuzzy="supply",
+        start_time="2026-10-01",
+        end_time="2026-10-19",
+        sector_id=42,
+        status="tracking",
+        impact="severe",
+        timeline_source="manual",
+        order_by="title",
+        order_type="asc",
+        limit=30,
+    )
+    await AsyncAnalysis(client).list_public_market_research(**params)
+    client.get.assert_awaited_once_with("/api/qdata/v1/analysis/public_research", cast_to=PublicResearchListResponse, options={"params": params})
+    client.get.reset_mock()
+    await AsyncAnalysis(client).list_market_research(impact="high", timeline_source="producer", visibility="private")
+    assert client.get.call_args.kwargs["options"]["params"] == dict(impact="high", timeline_source="producer", visibility="private")

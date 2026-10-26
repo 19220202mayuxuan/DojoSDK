@@ -1,4 +1,6 @@
 from dojo.types.models import (
+    PublicResearchCardResponse as PublicResearchCardResponse,
+    PublicResearchListResponse as PublicResearchListResponse,
     CompetitorsResponse as CompetitorsResponse,
     RiskMetricsResponse as RiskMetricsResponse,
     MarketHistoryResponse as MarketHistoryResponse,
@@ -65,9 +67,22 @@ from dojo.types.models import (
     SectorL2EventResponse as SectorL2EventResponse,
     SectorL2EventCreateResponse as SectorL2EventCreateResponse,
     SectorL2EventListResponse as SectorL2EventListResponse,
+    Kline as Kline,
+    KlineBatchResult as KlineBatchResult,
 )
+from dojo.types.snapshot import (
+    SnapshotFile,
+    SnapshotGCResult,
+    SnapshotMetadata,
+    SnapshotRef,
+    SnapshotSyncFailure,
+    SnapshotSyncResult,
+)
+from dojo.types.query import ParquetQuery, QueryFilter
 
 __all__ = [
+    "PublicResearchCardResponse",
+    "PublicResearchListResponse",
     "CompetitorsResponse",
     "RiskMetricsResponse",
     "MarketHistoryResponse",
@@ -134,4 +149,14 @@ __all__ = [
     "SectorL2EventResponse",
     "SectorL2EventCreateResponse",
     "SectorL2EventListResponse",
+    "Kline",
+    "KlineBatchResult",
+    "SnapshotFile",
+    "SnapshotGCResult",
+    "SnapshotMetadata",
+    "SnapshotRef",
+    "SnapshotSyncFailure",
+    "SnapshotSyncResult",
+    "ParquetQuery",
+    "QueryFilter",
 ]

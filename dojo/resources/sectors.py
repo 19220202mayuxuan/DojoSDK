@@ -188,6 +188,7 @@ class Sectors(SyncAPIResource):
         level: int | None = None,
         parent_id: int | None = None,
         sensitivity: str | None = None,
+        version: str | None = None,
         tree: bool | None = None,
     ) -> SectorInfoListResponse:
         """Retrieves detailed sector taxonomy information.
@@ -206,6 +207,8 @@ class Sectors(SyncAPIResource):
             Parent sector ID.
         sensitivity : str, optional
             Sector sensitivity.
+        version : str, optional
+            Taxonomy metadata version (for example ``v2``).
         tree : bool, optional
             Whether to return in tree format (default: False).
         """
@@ -222,6 +225,8 @@ class Sectors(SyncAPIResource):
             params["parent_id"] = parent_id
         if sensitivity is not None:
             params["sensitivity"] = sensitivity
+        if version is not None:
+            params["version"] = version
         if tree is not None:
             params["tree"] = tree
         return self._get(
@@ -249,29 +254,41 @@ class Sectors(SyncAPIResource):
     def get_symbol_relations(
         self,
         *,
+        sector_id: int | None = None,
         sector_name: str | None = None,
         symbol: str | None = None,
         relation_priority: str | None = None,
-        market: str,
+        version: str | None = None,
+        market: str | None = None,
     ) -> SectorSymbolRelationListResponse:
         """Retrieves relationships between sectors and stock/instrument symbols.
 
         Parameters
         ----------
+        sector_id : int, optional
+            Canonical sector ID to query.
         sector_name : str, optional
             Sector name to query.
         symbol : str, optional
             Symbol to query.
         relation_priority : str, optional
             Relation priority filter.
+        version : str, optional
+            Sector taxonomy version filter.
+        market : str, optional
+            Market filter (us, zh/cn, or hk).
         """
         params: dict[str, Any] = {}
+        if sector_id is not None:
+            params["sector_id"] = sector_id
         if sector_name is not None:
             params["sector_name"] = sector_name
         if symbol is not None:
             params["symbol"] = symbol
         if relation_priority is not None:
             params["relation_priority"] = relation_priority
+        if version is not None:
+            params["version"] = version
         if market is not None:
             params["market"] = market
         return self._get(
@@ -312,6 +329,7 @@ class Sectors(SyncAPIResource):
         self,
         *,
         market: str | None = None,
+        trade_date: str | None = None,
         level1_id: int | None = None,
         level2_id: int | None = None,
         level3_id: int | None = None,
@@ -328,6 +346,7 @@ class Sectors(SyncAPIResource):
                 "params": _query_params(
                     ConstituentsQuery(
                         market=market,
+                        trade_date=trade_date,
                         level1_id=level1_id,
                         level2_id=level2_id,
                         level3_id=level3_id,
@@ -710,6 +729,7 @@ class AsyncSectors(AsyncAPIResource):
         level: int | None = None,
         parent_id: int | None = None,
         sensitivity: str | None = None,
+        version: str | None = None,
         tree: bool | None = None,
     ) -> SectorInfoListResponse:
         """Retrieves detailed sector taxonomy information asynchronously.
@@ -728,6 +748,8 @@ class AsyncSectors(AsyncAPIResource):
             Parent sector ID.
         sensitivity : str, optional
             Sector sensitivity.
+        version : str, optional
+            Taxonomy metadata version (for example ``v2``).
         tree : bool, optional
             Whether to return in tree format (default: False).
         """
@@ -744,6 +766,8 @@ class AsyncSectors(AsyncAPIResource):
             params["parent_id"] = parent_id
         if sensitivity is not None:
             params["sensitivity"] = sensitivity
+        if version is not None:
+            params["version"] = version
         if tree is not None:
             params["tree"] = tree
         return await self._get(
@@ -771,29 +795,41 @@ class AsyncSectors(AsyncAPIResource):
     async def get_symbol_relations(
         self,
         *,
+        sector_id: int | None = None,
         sector_name: str | None = None,
         symbol: str | None = None,
         relation_priority: str | None = None,
+        version: str | None = None,
         market: str | None = None,
     ) -> SectorSymbolRelationListResponse:
         """Retrieves relationships between sectors and stock/instrument symbols asynchronously.
 
         Parameters
         ----------
+        sector_id : int, optional
+            Canonical sector ID to query.
         sector_name : str, optional
             Sector name to query.
         symbol : str, optional
             Symbol to query.
         relation_priority : str, optional
             Relation priority filter.
+        version : str, optional
+            Sector taxonomy version filter.
+        market : str, optional
+            Market filter (us, zh/cn, or hk).
         """
         params: dict[str, Any] = {}
+        if sector_id is not None:
+            params["sector_id"] = sector_id
         if sector_name is not None:
             params["sector_name"] = sector_name
         if symbol is not None:
             params["symbol"] = symbol
         if relation_priority is not None:
             params["relation_priority"] = relation_priority
+        if version is not None:
+            params["version"] = version
         if market is not None:
             params["market"] = market
         return await self._get(
@@ -836,6 +872,7 @@ class AsyncSectors(AsyncAPIResource):
         self,
         *,
         market: str | None = None,
+        trade_date: str | None = None,
         level1_id: int | None = None,
         level2_id: int | None = None,
         level3_id: int | None = None,
@@ -852,6 +889,7 @@ class AsyncSectors(AsyncAPIResource):
                 "params": _query_params(
                     ConstituentsQuery(
                         market=market,
+                        trade_date=trade_date,
                         level1_id=level1_id,
                         level2_id=level2_id,
                         level3_id=level3_id,
