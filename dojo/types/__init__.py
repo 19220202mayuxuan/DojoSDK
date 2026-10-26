@@ -57,6 +57,14 @@ from dojo.types.models import (
     MarketMacroEventDailyRequest as MarketMacroEventDailyRequest,
     MarketStructuredEventIngestResponse as MarketStructuredEventIngestResponse,
     MarketStructuredEventListResponse as MarketStructuredEventListResponse,
+    SectorL2EventLocalizedText as SectorL2EventLocalizedText,
+    SectorL2EventPayload as SectorL2EventPayload,
+    SectorL2EventCreateRequest as SectorL2EventCreateRequest,
+    SectorL2EventUpdateRequest as SectorL2EventUpdateRequest,
+    SectorL2EventListRequest as SectorL2EventListRequest,
+    SectorL2EventResponse as SectorL2EventResponse,
+    SectorL2EventCreateResponse as SectorL2EventCreateResponse,
+    SectorL2EventListResponse as SectorL2EventListResponse,
 )
 
 __all__ = [
@@ -118,4 +126,12 @@ __all__ = [
     "MarketMacroEventDailyRequest",
     "MarketStructuredEventIngestResponse",
     "MarketStructuredEventListResponse",
+    "SectorL2EventLocalizedText",
+    "SectorL2EventPayload",
+    "SectorL2EventCreateRequest",
+    "SectorL2EventUpdateRequest",
+    "SectorL2EventListRequest",
+    "SectorL2EventResponse",
+    "SectorL2EventCreateResponse",
+    "SectorL2EventListResponse",
 ]
