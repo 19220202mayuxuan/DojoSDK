@@ -652,6 +652,7 @@ class ResearchResultSnapshotRequest(ResearchRequestModel):
 
 class ResearchCreateRequest(ResearchRequestModel):
     research_uid: str
+    research_type: str | None = Field(default=None, max_length=64)
     title: str
     description: str
     observation_window: ResearchObservationWindow
@@ -663,6 +664,18 @@ class ResearchCreateRequest(ResearchRequestModel):
     timeline_source: Literal["producer", "manual"] = "producer"
     extra: Dict[str, Any] = Field(default_factory=dict)
     initial_result: ResearchResultSnapshotRequest | None = None
+
+
+class ResearchUpdateRequest(ResearchRequestModel):
+    research_type: str | None = Field(default=None, max_length=64)
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    description: str | None = Field(default=None, min_length=1)
+    observation_window: ResearchObservationWindow | None = None
+    sector_id: int | None = Field(default=None, gt=0)
+    status: Literal["tracking", "near_resolution"] | None = None
+    impact: Literal["medium", "high", "severe"] | None = None
+    visibility: Literal["private", "public"] | None = None
+    extra: Dict[str, Any] | None = None
 
 
 class ResearchTimelineReplaceRequest(ResearchRequestModel):
@@ -701,6 +714,7 @@ class ResearchResultResponse(DojoModel):
 
 class ResearchCardResponse(DojoModel):
     research_uid: str
+    research_type: str | None = None
     title: str
     description: str
     observation_window: ResearchObservationWindow | None = Field(...)

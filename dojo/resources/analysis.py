@@ -18,6 +18,7 @@ from dojo.types.models import (
     SectorBriefExtractWriteResponse,
     ResearchAggregateResponse,
     ResearchCreateRequest,
+    ResearchUpdateRequest,
     ResearchDeleteResponse,
     ResearchListResponse,
     PublicResearchListResponse,
@@ -120,7 +121,7 @@ class Analysis(SyncAPIResource):
     def list_market_research(
         self,
         *,
-        scope: Literal["public", "mine"] | None = None,
+        scope: Literal["public", "mine", "starred"] | None = None,
         is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
@@ -137,7 +138,7 @@ class Analysis(SyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchListResponse:
-        """List public roots plus caller-owned roots unless an explicit view is requested."""
+        """List public roots plus caller-owned roots; scope also supports the caller's starred view."""
         params = {
             key: value
             for key, value in {
@@ -222,6 +223,15 @@ class Analysis(SyncAPIResource):
             "/api/qdata/v1/analysis/research",
             cast_to=ResearchAggregateResponse,
             options={"json": model_dump(request, exclude_none=False)},
+        )
+
+    def update_market_research(self, research_uid: str, *, body: ResearchUpdateRequest | dict[str, Any]) -> ResearchAggregateResponse:
+        """Update supplied root fields only; this does not append a research result."""
+        request = body if isinstance(body, ResearchUpdateRequest) else model_validate(ResearchUpdateRequest, body)
+        return self._put(
+            f"/api/qdata/v1/analysis/research/{research_uid}",
+            cast_to=ResearchAggregateResponse,
+            options={"json": model_dump(request, exclude_unset=True), "max_retries": 0},
         )
 
     def get_market_research(self, research_uid: str) -> ResearchAggregateResponse:
@@ -726,7 +736,7 @@ class AsyncAnalysis(AsyncAPIResource):
     async def list_market_research(
         self,
         *,
-        scope: Literal["public", "mine"] | None = None,
+        scope: Literal["public", "mine", "starred"] | None = None,
         is_editor_pick: bool | None = None,
         sector_id: int | None = None,
         status: str | None = None,
@@ -743,7 +753,7 @@ class AsyncAnalysis(AsyncAPIResource):
         limit: int | None = None,
         offset: int | None = None,
     ) -> ResearchListResponse:
-        """List public roots plus caller-owned roots unless an explicit view is requested asynchronously."""
+        """List roots asynchronously, optionally selecting public, mine, or starred."""
         params = {
             key: value
             for key, value in {
@@ -828,6 +838,15 @@ class AsyncAnalysis(AsyncAPIResource):
             "/api/qdata/v1/analysis/research",
             cast_to=ResearchAggregateResponse,
             options={"json": model_dump(request, exclude_none=False)},
+        )
+
+    async def update_market_research(self, research_uid: str, *, body: ResearchUpdateRequest | dict[str, Any]) -> ResearchAggregateResponse:
+        """Update supplied root fields only, without replaying a failed write."""
+        request = body if isinstance(body, ResearchUpdateRequest) else model_validate(ResearchUpdateRequest, body)
+        return await self._put(
+            f"/api/qdata/v1/analysis/research/{research_uid}",
+            cast_to=ResearchAggregateResponse,
+            options={"json": model_dump(request, exclude_unset=True), "max_retries": 0},
         )
 
     async def get_market_research(self, research_uid: str) -> ResearchAggregateResponse:

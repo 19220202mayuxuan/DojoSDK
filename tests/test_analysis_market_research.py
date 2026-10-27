@@ -508,3 +508,222 @@ async def test_public_research_async_route_and_common_filter_parity():
     client.get.reset_mock()
     await AsyncAnalysis(client).list_market_research(impact="high", timeline_source="producer", visibility="private")
     assert client.get.call_args.kwargs["options"]["params"] == dict(impact="high", timeline_source="producer", visibility="private")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("visibility", ["private", "public"])
+@pytest.mark.parametrize("research_type", [None, "", "event", "x" * 64])
+async def test_create_research_type_and_visibility_http_contract(async_mode, visibility, research_type):
+    import json
+
+    requests = []
+    body = {**ROOT_BODY, "visibility": visibility, "research_type": research_type}
+
+    def transport(request):
+        requests.append(request)
+        sent = json.loads(request.content)
+        return httpx.Response(200, json={"code": 0, "data": {**sent, "owner_user_id": "owner", "timeline": []}})
+
+    http_type, client_type = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    http_client = http_type(transport=httpx.MockTransport(transport))
+    client = client_type(api_key="test", online=True, http_client=http_client, return_raw_data=False)
+    try:
+        response = client.analysis.create_market_research(body=body)
+        if async_mode:
+            response = await response
+        assert response.research_type == research_type
+        assert response.visibility == visibility
+    finally:
+        if async_mode:
+            await http_client.aclose()
+        else:
+            http_client.close()
+    assert len(requests) == 1
+    assert requests[0].method == "POST" and requests[0].url.path == "/api/qdata/v1/analysis/research"
+    assert json.loads(requests[0].content)["research_type"] == research_type
+    assert json.loads(requests[0].content)["visibility"] == visibility
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"research_type": "x" * 65},
+        {"research_type": 123},
+        {"visibility": "unlisted"},
+        {"visibility": None},
+    ],
+)
+def test_create_research_rejects_invalid_type_and_visibility_before_sending(body):
+    client = Mock()
+    with pytest.raises(ValidationError):
+        Analysis(client).create_market_research(body={**ROOT_BODY, **body})
+    client.post.assert_not_called()
+
+
+def test_create_research_preserves_legacy_private_default_and_optional_type():
+    from dojo.types.models import ResearchCreateRequest
+
+    request = ResearchCreateRequest.model_validate({key: value for key, value in ROOT_BODY.items() if key != "visibility"})
+    assert request.visibility == "private"
+    assert request.research_type is None
+
+
+@pytest.mark.parametrize("ambient_key", [None, "ambient-secret"])
+def test_public_research_anonymous_sync_no_credentials_or_private_access(monkeypatch, ambient_key):
+    from dojo import DojoError
+
+    monkeypatch.delenv("DOJO_API_KEY", raising=False)
+    if ambient_key:
+        monkeypatch.setenv("DOJO_API_KEY", ambient_key)
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"page": 1, "size": 10, "total_num": 0, "total_page": 0, "num": 0, "data": []})
+
+    with httpx.Client(
+        transport=httpx.MockTransport(handler), auth=("user", "password"), headers={"Authorization": "Bearer transport-secret", "Cookie": "session=secret"}
+    ) as transport:
+        client = Dojo(anonymous=True, online=True, http_client=transport, default_headers={"Authorization": "Bearer default-secret"})
+        assert client.api_key is None and not client.auth_headers
+        result = client.analysis.list_public_market_research(is_editor_pick=False, offset=0)
+        assert result["data"] == []
+        assert seen[0].url.path == "/api/qdata/v1/analysis/public_research"
+        assert "authorization" not in seen[0].headers and "cookie" not in seen[0].headers
+        assert seen[0].url.params["is_editor_pick"] == "false"
+        for method, path in [("GET", "/api/qdata/v1/analysis/research"), ("POST", "/api/qdata/v1/analysis/public_research")]:
+            with pytest.raises(DojoError, match="Anonymous clients only"):
+                client.request(method, path, cast_to=dict)
+        assert len(seen) == 1
+
+
+@pytest.mark.asyncio
+async def test_public_research_anonymous_async_no_credentials_or_private_access(monkeypatch):
+    from dojo import DojoError
+
+    monkeypatch.delenv("DOJO_API_KEY", raising=False)
+    seen = []
+
+    async def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"page": 1, "size": 10, "total_num": 0, "total_page": 0, "num": 0, "data": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler), auth=("user", "password"), headers={"Cookie": "session=secret"}) as transport:
+        client = AsyncDojo(anonymous=True, api_key="ignored-explicit-secret", online=True, http_client=transport)
+        result = await client.analysis.list_public_market_research()
+        assert result["data"] == [] and client.api_key is None
+        assert seen[0].url.path == "/api/qdata/v1/analysis/public_research"
+        assert "authorization" not in seen[0].headers and "cookie" not in seen[0].headers
+        with pytest.raises(DojoError, match="Anonymous clients only"):
+            await client.analysis.list_market_research()
+        assert len(seen) == 1
+
+
+@pytest.mark.parametrize("factory", [Dojo, AsyncDojo])
+def test_default_clients_still_require_credentials(monkeypatch, factory):
+    from dojo import DojoError
+
+    monkeypatch.delenv("DOJO_API_KEY", raising=False)
+    with pytest.raises(DojoError, match="Missing authentication credentials"):
+        factory(online=True)
+    with pytest.raises(DojoError, match="requires online access"):
+        factory(anonymous=True, online=False)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+@pytest.mark.parametrize("body", [{"visibility": "public", "research_type": "daily-event"}, {"research_type": None}])
+async def test_update_research_sends_only_explicit_fields_and_preserves_identity(async_mode, body):
+    import json
+
+    requests = []
+
+    def transport(request):
+        requests.append(request)
+        return httpx.Response(200, json={"code": 0, "data": {**ROOT_BODY, **body, "owner_user_id": "owner", "timeline": []}})
+
+    http_type, client_type = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    http_client = http_type(transport=httpx.MockTransport(transport))
+    client = client_type(api_key="test", online=True, http_client=http_client, return_raw_data=False, default_headers={"UserId": "user", "OrgId": "org"})
+    try:
+        result = client.analysis.update_market_research(ROOT_BODY["research_uid"], body=body)
+        if async_mode:
+            result = await result
+        assert result.research_uid == ROOT_BODY["research_uid"]
+        assert result.research_type == body["research_type"]
+    finally:
+        if async_mode:
+            await http_client.aclose()
+        else:
+            http_client.close()
+    assert len(requests) == 1
+    assert requests[0].method == "PUT"
+    assert requests[0].url.path == f"/api/qdata/v1/analysis/research/{ROOT_BODY['research_uid']}"
+    assert json.loads(requests[0].content) == body
+    assert requests[0].headers["UserId"] == "user" and requests[0].headers["OrgId"] == "org"
+    assert requests[0].headers["Authorization"] == "Bearer test"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+async def test_update_research_never_retries_server_error(async_mode):
+    requests = []
+
+    def transport(request):
+        requests.append(request)
+        return httpx.Response(500, json={"code": 500, "message": "update outcome unknown"})
+
+    http_type, client_type = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    http_client = http_type(transport=httpx.MockTransport(transport))
+    client = client_type(api_key="test", online=True, max_retries=3, http_client=http_client)
+    try:
+        with pytest.raises(APIStatusError):
+            result = client.analysis.update_market_research(ROOT_BODY["research_uid"], body={"visibility": "public", "research_type": "daily-event"})
+            if async_mode:
+                await result
+    finally:
+        if async_mode:
+            await http_client.aclose()
+        else:
+            http_client.close()
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("body", [{"owner_user_id": "forged"}, {"title": ""}, {"research_type": "x" * 65}, {"visibility": "unlisted"}, {"sector_id": 0}])
+def test_update_research_rejects_invalid_fields_before_sending(body):
+    client = Mock()
+    with pytest.raises(ValidationError):
+        Analysis(client).update_market_research("r-0123456789abcdef", body=body)
+    client.put.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_mode", [False, True])
+async def test_starred_scope_annotation_and_wire_parameter(async_mode):
+    from typing import get_args, get_type_hints
+
+    resource = AsyncAnalysis if async_mode else Analysis
+    union = get_type_hints(resource.list_market_research)["scope"]
+    scope_values = next(get_args(value) for value in get_args(union) if get_args(value))
+    assert set(scope_values) == {"public", "mine", "starred"}
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        return httpx.Response(200, json={"page": 1, "size": 18, "total_num": 0, "total_page": 0, "num": 0, "data": []})
+
+    http_class, sdk_class = (httpx.AsyncClient, AsyncDojo) if async_mode else (httpx.Client, Dojo)
+    transport = http_class(transport=httpx.MockTransport(handler))
+    sdk = sdk_class(api_key="test", online=True, http_client=transport)
+    try:
+        result = sdk.analysis.list_market_research(scope="starred", page=1, size=18, order_type="desc")
+        if async_mode:
+            await result
+    finally:
+        if async_mode:
+            await transport.aclose()
+        else:
+            transport.close()
+    assert len(seen) == 1 and seen[0].url.params["scope"] == "starred"
+    assert seen[0].url.path == "/api/qdata/v1/analysis/research"
