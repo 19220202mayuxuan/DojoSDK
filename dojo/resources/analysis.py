@@ -26,10 +26,97 @@ from dojo.types.models import (
     ResearchResultSnapshotRequest,
     ResearchResultWriteResponse,
     ResearchTimelineReplaceRequest,
+    SectorL2EventCreateRequest,
+    SectorL2EventCreateResponse,
+    SectorL2EventListRequest,
+    SectorL2EventListResponse,
+    SectorL2EventResponse,
+    SectorL2EventUpdateRequest,
 )
 
 
 class Analysis(SyncAPIResource):
+
+    def list_sector_l2_events(
+        self,
+        *,
+        id: int | None = None,
+        as_of_date: str | None = None,
+        market: str | None = None,
+        kind_id: str | None = None,
+        signal_type: str | None = None,
+        source_scope: str | None = None,
+        sector_id: int | None = None,
+        ticker: str | None = None,
+        event_datetime_from: str | None = None,
+        event_datetime_to: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> SectorL2EventListResponse:
+        """List sector L2 events using the supported event filters."""
+        request = model_validate(
+            SectorL2EventListRequest,
+            {
+                "id": id,
+                "as_of_date": as_of_date,
+                "market": market,
+                "kind_id": kind_id,
+                "signal_type": signal_type,
+                "source_scope": source_scope,
+                "sector_id": sector_id,
+                "ticker": ticker,
+                "event_datetime_from": event_datetime_from,
+                "event_datetime_to": event_datetime_to,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+        return self._get(
+            "/api/qdata/v1/analysis/research/sector_l2_events",
+            cast_to=SectorL2EventListResponse,
+            options={"params": model_dump(request, mode="json", exclude_none=True)},
+        )
+
+    def create_sector_l2_events(
+        self,
+        *,
+        body: SectorL2EventCreateRequest | dict[str, Any],
+    ) -> SectorL2EventCreateResponse:
+        """Create one or more sector L2 events linked to one sector."""
+        request = body if isinstance(body, SectorL2EventCreateRequest) else model_validate(SectorL2EventCreateRequest, body)
+        return self._post(
+            "/api/qdata/v1/analysis/research/sector_l2_events",
+            cast_to=SectorL2EventCreateResponse,
+            options={"json": model_dump(request, mode="json")},
+        )
+
+    def get_sector_l2_event(self, event_id: int) -> SectorL2EventResponse:
+        """Get one sector L2 event by ID."""
+        return self._get(
+            f"/api/qdata/v1/analysis/research/sector_l2_events/{event_id}",
+            cast_to=SectorL2EventResponse,
+        )
+
+    def update_sector_l2_event(
+        self,
+        event_id: int,
+        *,
+        body: SectorL2EventUpdateRequest | dict[str, Any],
+    ) -> SectorL2EventResponse:
+        """Partially update one sector L2 event."""
+        request = body if isinstance(body, SectorL2EventUpdateRequest) else model_validate(SectorL2EventUpdateRequest, body)
+        return self._put(
+            f"/api/qdata/v1/analysis/research/sector_l2_events/{event_id}",
+            cast_to=SectorL2EventResponse,
+            options={"json": model_dump(request, mode="json", exclude_unset=True)},
+        )
+
+    def delete_sector_l2_event(self, event_id: int) -> SectorL2EventResponse:
+        """Delete one sector L2 event and return its previous representation."""
+        return self._delete(
+            f"/api/qdata/v1/analysis/research/sector_l2_events/{event_id}",
+            cast_to=SectorL2EventResponse,
+        )
 
     def list_market_research(
         self,
@@ -564,6 +651,87 @@ class Analysis(SyncAPIResource):
 
 
 class AsyncAnalysis(AsyncAPIResource):
+
+    async def list_sector_l2_events(
+        self,
+        *,
+        id: int | None = None,
+        as_of_date: str | None = None,
+        market: str | None = None,
+        kind_id: str | None = None,
+        signal_type: str | None = None,
+        source_scope: str | None = None,
+        sector_id: int | None = None,
+        ticker: str | None = None,
+        event_datetime_from: str | None = None,
+        event_datetime_to: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> SectorL2EventListResponse:
+        """List sector L2 events asynchronously using the supported event filters."""
+        request = model_validate(
+            SectorL2EventListRequest,
+            {
+                "id": id,
+                "as_of_date": as_of_date,
+                "market": market,
+                "kind_id": kind_id,
+                "signal_type": signal_type,
+                "source_scope": source_scope,
+                "sector_id": sector_id,
+                "ticker": ticker,
+                "event_datetime_from": event_datetime_from,
+                "event_datetime_to": event_datetime_to,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+        return await self._get(
+            "/api/qdata/v1/analysis/research/sector_l2_events",
+            cast_to=SectorL2EventListResponse,
+            options={"params": model_dump(request, mode="json", exclude_none=True)},
+        )
+
+    async def create_sector_l2_events(
+        self,
+        *,
+        body: SectorL2EventCreateRequest | dict[str, Any],
+    ) -> SectorL2EventCreateResponse:
+        """Create sector L2 events asynchronously."""
+        request = body if isinstance(body, SectorL2EventCreateRequest) else model_validate(SectorL2EventCreateRequest, body)
+        return await self._post(
+            "/api/qdata/v1/analysis/research/sector_l2_events",
+            cast_to=SectorL2EventCreateResponse,
+            options={"json": model_dump(request, mode="json")},
+        )
+
+    async def get_sector_l2_event(self, event_id: int) -> SectorL2EventResponse:
+        """Get one sector L2 event by ID asynchronously."""
+        return await self._get(
+            f"/api/qdata/v1/analysis/research/sector_l2_events/{event_id}",
+            cast_to=SectorL2EventResponse,
+        )
+
+    async def update_sector_l2_event(
+        self,
+        event_id: int,
+        *,
+        body: SectorL2EventUpdateRequest | dict[str, Any],
+    ) -> SectorL2EventResponse:
+        """Partially update one sector L2 event asynchronously."""
+        request = body if isinstance(body, SectorL2EventUpdateRequest) else model_validate(SectorL2EventUpdateRequest, body)
+        return await self._put(
+            f"/api/qdata/v1/analysis/research/sector_l2_events/{event_id}",
+            cast_to=SectorL2EventResponse,
+            options={"json": model_dump(request, mode="json", exclude_unset=True)},
+        )
+
+    async def delete_sector_l2_event(self, event_id: int) -> SectorL2EventResponse:
+        """Delete one sector L2 event asynchronously."""
+        return await self._delete(
+            f"/api/qdata/v1/analysis/research/sector_l2_events/{event_id}",
+            cast_to=SectorL2EventResponse,
+        )
 
     async def list_market_research(
         self,
