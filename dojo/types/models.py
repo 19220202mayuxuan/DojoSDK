@@ -1137,3 +1137,47 @@ class SectorBriefExtractWriteRequest(DojoModel):
 class SectorBriefExtractWriteResponse(DojoModel):
     data: List[SectorBriefExtractItem] | None = None
     receipt: Dict[str, Any] | None = None
+
+
+
+class EtfHoldingRow(DojoModel):
+    symbol: str
+    report_date: date
+    filing_date: date
+    name: str | None = None
+    title:str | None = None
+    isin: str | None = None
+    ticker: str | None = None
+    cusip: str | None = None
+    balance: float | None = None
+    units: str | None = None
+    desc_other_units: str | None = None
+    value_usd: float | None = None
+    pct_value: float | None = None
+    payoff_profile: str | None = None
+    asset_category: str | None = None
+    issuer_category: str | None = None
+    currency_code: str | None = None
+    investment_country: str | None = None
+    restricted: bool | None = None
+    is_derivative: bool | None = None
+    maturity_date: date | None = None
+    annualized_rate: float | None = None
+    is_default: bool | None = None
+    derivative_type: str | None = None
+    notional_amount: float | None = None
+    counterparty: str | None = None
+
+
+class EtfHoldingsResponse(BaseModel):
+    total_num: int
+    # 多 symbol 时 data 为 dict[str, list[row]]；单 symbol 时 data 为 list[row]
+    data: dict[str, list[EtfHoldingRow]] | list[EtfHoldingRow]
+
+class EtfHoldingTargetRow(EtfHoldingRow):
+    holding_rank:int | None = None
+    period_rank: int | None = None
+
+class EtfTopHoldingTargetResponse(BaseModel):
+    total_num: int
+    data: list[EtfHoldingTargetRow]
