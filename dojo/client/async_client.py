@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from dojo.resources.strategy import AsyncStrategy
     from dojo.resources.cache import AsyncCache
     from dojo.resources.analysis import AsyncAnalysis
+    from dojo.resources.etf import AsyncEtf
 
 from dojo.client.base import AsyncAPIClient
 from dojo._exceptions import DojoError, OfflineDataNotAvailableError
@@ -351,3 +352,10 @@ class AsyncDojo(AsyncAPIClient):
         from dojo.resources.analysis import AsyncAnalysis
 
         return AsyncAnalysis(self)
+
+    @cached_property
+    def etf(self) -> AsyncEtf:
+        """Access etf holding portfolio"""
+        from dojo.resources.etf import AsyncEtf
+
+        return AsyncEtf(self)
