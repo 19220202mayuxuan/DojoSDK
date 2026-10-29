@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Literal, Union
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from dojo._compat import PYDANTIC_V1
 from dojo.types.snapshot import SnapshotMetadata
 
@@ -653,6 +653,7 @@ class ResearchResultSnapshotRequest(ResearchRequestModel):
 
 class ResearchCreateRequest(ResearchRequestModel):
     research_uid: str
+    research_type: str | None = Field(default=None, max_length=64)
     title: str
     description: str
     observation_window: ResearchObservationWindow
@@ -664,6 +665,18 @@ class ResearchCreateRequest(ResearchRequestModel):
     timeline_source: Literal["producer", "manual"] = "producer"
     extra: Dict[str, Any] = Field(default_factory=dict)
     initial_result: ResearchResultSnapshotRequest | None = None
+
+
+class ResearchUpdateRequest(ResearchRequestModel):
+    research_type: str | None = Field(default=None, max_length=64)
+    title: str | None = Field(default=None, min_length=1, max_length=512)
+    description: str | None = Field(default=None, min_length=1)
+    observation_window: ResearchObservationWindow | None = None
+    sector_id: int | None = Field(default=None, gt=0)
+    status: Literal["tracking", "near_resolution"] | None = None
+    impact: Literal["medium", "high", "severe"] | None = None
+    visibility: Literal["private", "public"] | None = None
+    extra: Dict[str, Any] | None = None
 
 
 class ResearchTimelineReplaceRequest(ResearchRequestModel):
@@ -703,6 +716,7 @@ class ResearchResultResponse(DojoModel):
 
 class ResearchCardResponse(DojoModel):
     research_uid: str
+    research_type: str | None = None
     title: str
     description: str
     observation_window: ResearchObservationWindow | None = Field(...)
@@ -757,6 +771,155 @@ class ResearchResultListResponse(DojoModel):
 
 class ResearchResultWriteResponse(DojoModel):
     result_id: int
+
+
+def _normalize_sector_path_id(value: str) -> str:
+    path = value.strip().strip("/")
+    parts = path.split("/")
+    if not path or any(not part.isdigit() or int(part) <= 0 for part in parts):
+        raise ValueError("sector_path_id must contain positive integer IDs separated by '/'")
+    if len(path) > 512:
+        raise ValueError("sector_path_id must be at most 512 characters")
+    return path
+
+
+def _require_timezone_aware(value: datetime, field_name: str) -> None:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError(f"{field_name} must include a UTC offset or timezone")
+
+
+class SectorL2EventLocalizedText(ResearchRequestModel):
+    en: str = Field(min_length=1)
+    zh: str = Field(min_length=1)
+
+
+class SectorL2EventPayload(ResearchRequestModel):
+    title: SectorL2EventLocalizedText
+    market: str = Field(min_length=1, max_length=16)
+    kind_id: str = Field(min_length=1, max_length=64)
+    summary: SectorL2EventLocalizedText
+    tickers: List[str] = Field(default_factory=list, max_length=1000)
+    evidence: List[str] = Field(min_length=1, max_length=1000)
+    signal_type: str = Field(min_length=1, max_length=32)
+    source_scope: str = Field(min_length=1, max_length=64)
+    event_datetime: datetime
+
+    @field_validator("tickers")
+    @classmethod
+    def normalize_tickers(cls, value: List[str]) -> List[str]:
+        normalized = [ticker.strip() for ticker in value]
+        if any(not ticker for ticker in normalized):
+            raise ValueError("tickers must contain non-empty strings")
+        if any(len(ticker) > 32 for ticker in normalized):
+            raise ValueError("each ticker must be at most 32 characters")
+        return list(dict.fromkeys(normalized))
+
+    @field_validator("evidence")
+    @classmethod
+    def normalize_evidence(cls, value: List[str]) -> List[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item for item in normalized):
+            raise ValueError("evidence must contain non-empty strings")
+        return list(dict.fromkeys(normalized))
+
+    @model_validator(mode="after")
+    def validate_event_datetime(self) -> "SectorL2EventPayload":
+        _require_timezone_aware(self.event_datetime, "event_datetime")
+        return self
+
+
+class SectorL2EventCreateRequest(ResearchRequestModel):
+    as_of_date: date
+    sector_path_id: str
+    events: List[SectorL2EventPayload] = Field(min_length=1, max_length=1000)
+
+    @field_validator("sector_path_id")
+    @classmethod
+    def validate_sector_path_id(cls, value: str) -> str:
+        return _normalize_sector_path_id(value)
+
+
+class SectorL2EventUpdateRequest(ResearchRequestModel):
+    title: SectorL2EventLocalizedText | None = None
+    market: str | None = Field(default=None, min_length=1, max_length=16)
+    kind_id: str | None = Field(default=None, min_length=1, max_length=64)
+    summary: SectorL2EventLocalizedText | None = None
+    tickers: List[str] | None = Field(default=None, max_length=1000)
+    evidence: List[str] | None = Field(default=None, min_length=1, max_length=1000)
+    signal_type: str | None = Field(default=None, min_length=1, max_length=32)
+    source_scope: str | None = Field(default=None, min_length=1, max_length=64)
+    event_datetime: datetime | None = None
+    as_of_date: date | None = None
+    sector_path_id: str | None = None
+
+    @field_validator("tickers")
+    @classmethod
+    def normalize_tickers(cls, value: List[str] | None) -> List[str] | None:
+        return SectorL2EventPayload.normalize_tickers(value) if value is not None else None
+
+    @field_validator("evidence")
+    @classmethod
+    def normalize_evidence(cls, value: List[str] | None) -> List[str] | None:
+        return SectorL2EventPayload.normalize_evidence(value) if value is not None else None
+
+    @field_validator("sector_path_id")
+    @classmethod
+    def validate_sector_path_id(cls, value: str | None) -> str | None:
+        return _normalize_sector_path_id(value) if value is not None else None
+
+    @model_validator(mode="after")
+    def require_update_field(self) -> "SectorL2EventUpdateRequest":
+        if not self.model_fields_set:
+            raise ValueError("at least one sector L2 event field is required")
+        if any(getattr(self, field_name) is None for field_name in self.model_fields_set):
+            raise ValueError("updated sector L2 event fields cannot be null")
+        if self.event_datetime is not None:
+            _require_timezone_aware(self.event_datetime, "event_datetime")
+        return self
+
+
+class SectorL2EventResponse(SectorL2EventPayload):
+    id: int
+    as_of_date: date
+    sector_path_id: str
+    sector_id: int
+    create_time: datetime | None = None
+    update_time: datetime | None = None
+
+
+class SectorL2EventCreateResponse(DojoModel):
+    created: int
+    data: List[SectorL2EventResponse] = Field(default_factory=list)
+
+
+class SectorL2EventListRequest(ResearchRequestModel):
+    id: int | None = Field(default=None, ge=1)
+    as_of_date: date | None = None
+    market: str | None = Field(default=None, max_length=16)
+    kind_id: str | None = Field(default=None, max_length=64)
+    signal_type: str | None = Field(default=None, max_length=32)
+    source_scope: str | None = Field(default=None, max_length=64)
+    sector_id: int | None = Field(default=None, ge=1)
+    ticker: str | None = Field(default=None, min_length=1, max_length=32)
+    event_datetime_from: datetime | None = None
+    event_datetime_to: datetime | None = None
+    limit: int | None = Field(default=None, ge=1, le=1000)
+    offset: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_event_datetime_range(self) -> "SectorL2EventListRequest":
+        if self.event_datetime_from is not None:
+            _require_timezone_aware(self.event_datetime_from, "event_datetime_from")
+        if self.event_datetime_to is not None:
+            _require_timezone_aware(self.event_datetime_to, "event_datetime_to")
+        if self.event_datetime_from and self.event_datetime_to and self.event_datetime_from > self.event_datetime_to:
+            raise ValueError("event_datetime_from must be earlier than or equal to event_datetime_to")
+        return self
+
+
+class SectorL2EventListResponse(DojoModel):
+    total_num: int
+    data: List[SectorL2EventResponse] = Field(default_factory=list)
 
 
 # Explicit aliases keep the SDK model vocabulary aligned with the
@@ -990,3 +1153,47 @@ class SectorBriefExtractWriteRequest(DojoModel):
 class SectorBriefExtractWriteResponse(DojoModel):
     data: List[SectorBriefExtractItem] | None = None
     receipt: Dict[str, Any] | None = None
+
+
+
+class EtfHoldingRow(DojoModel):
+    symbol: str
+    report_date: date
+    filing_date: date
+    name: str | None = None
+    title:str | None = None
+    isin: str | None = None
+    ticker: str | None = None
+    cusip: str | None = None
+    balance: float | None = None
+    units: str | None = None
+    desc_other_units: str | None = None
+    value_usd: float | None = None
+    pct_value: float | None = None
+    payoff_profile: str | None = None
+    asset_category: str | None = None
+    issuer_category: str | None = None
+    currency_code: str | None = None
+    investment_country: str | None = None
+    restricted: bool | None = None
+    is_derivative: bool | None = None
+    maturity_date: date | None = None
+    annualized_rate: float | None = None
+    is_default: bool | None = None
+    derivative_type: str | None = None
+    notional_amount: float | None = None
+    counterparty: str | None = None
+
+
+class EtfHoldingsResponse(BaseModel):
+    total_num: int
+    # 多 symbol 时 data 为 dict[str, list[row]]；单 symbol 时 data 为 list[row]
+    data: dict[str, list[EtfHoldingRow]] | list[EtfHoldingRow]
+
+class EtfHoldingTargetRow(EtfHoldingRow):
+    holding_rank:int | None = None
+    period_rank: int | None = None
+
+class EtfTopHoldingTargetResponse(BaseModel):
+    total_num: int
+    data: list[EtfHoldingTargetRow]
