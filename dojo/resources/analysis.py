@@ -43,6 +43,7 @@ class Analysis(SyncAPIResource):
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
+        result_content_fields: str | None = None,
         order_by: str | None = None,
         order_type: str | None = None,
         page: int | None = None,
@@ -64,6 +65,7 @@ class Analysis(SyncAPIResource):
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
+                "result_content_fields": result_content_fields,
                 "order_by": order_by,
                 "order_type": order_type,
                 "page": page,
@@ -90,6 +92,7 @@ class Analysis(SyncAPIResource):
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
+        result_content_fields: str | None = None,
         order_by: str | None = None,
         order_type: str | None = None,
         page: int | None = None,
@@ -109,6 +112,7 @@ class Analysis(SyncAPIResource):
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
+                "result_content_fields": result_content_fields,
                 "order_by": order_by,
                 "order_type": order_type,
                 "page": page,
@@ -137,11 +141,18 @@ class Analysis(SyncAPIResource):
             options={"json": model_dump(request, exclude_none=False)},
         )
 
-    def get_market_research(self, research_uid: str) -> ResearchAggregateResponse:
+    def get_market_research(
+        self,
+        research_uid: str,
+        *,
+        result_content_fields: str | None = None,
+    ) -> ResearchAggregateResponse:
         """Get one market research root with its latest result and effective timeline."""
+        params = {"result_content_fields": result_content_fields} if result_content_fields is not None else {}
         return self._get(
             f"/api/qdata/v1/analysis/research/{research_uid}",
             cast_to=ResearchAggregateResponse,
+            options={"params": params} if params else None,
         )
 
     def delete_market_research(self, research_uid: str) -> ResearchDeleteResponse:
@@ -158,6 +169,7 @@ class Analysis(SyncAPIResource):
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
+        result_content_fields: str | None = None,
         order_by: str | None = None,
         order_type: str | None = None,
         page: int | None = None,
@@ -172,6 +184,7 @@ class Analysis(SyncAPIResource):
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
+                "result_content_fields": result_content_fields,
                 "order_by": order_by,
                 "order_type": order_type,
                 "page": page,
@@ -568,6 +581,7 @@ class AsyncAnalysis(AsyncAPIResource):
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
+        result_content_fields: str | None = None,
         order_by: str | None = None,
         order_type: str | None = None,
         page: int | None = None,
@@ -589,6 +603,7 @@ class AsyncAnalysis(AsyncAPIResource):
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
+                "result_content_fields": result_content_fields,
                 "order_by": order_by,
                 "order_type": order_type,
                 "page": page,
@@ -615,6 +630,7 @@ class AsyncAnalysis(AsyncAPIResource):
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
+        result_content_fields: str | None = None,
         order_by: str | None = None,
         order_type: str | None = None,
         page: int | None = None,
@@ -634,6 +650,7 @@ class AsyncAnalysis(AsyncAPIResource):
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
+                "result_content_fields": result_content_fields,
                 "order_by": order_by,
                 "order_type": order_type,
                 "page": page,
@@ -662,11 +679,18 @@ class AsyncAnalysis(AsyncAPIResource):
             options={"json": model_dump(request, exclude_none=False)},
         )
 
-    async def get_market_research(self, research_uid: str) -> ResearchAggregateResponse:
+    async def get_market_research(
+        self,
+        research_uid: str,
+        *,
+        result_content_fields: str | None = None,
+    ) -> ResearchAggregateResponse:
         """Get one market research root with its latest result and effective timeline asynchronously."""
+        params = {"result_content_fields": result_content_fields} if result_content_fields is not None else {}
         return await self._get(
             f"/api/qdata/v1/analysis/research/{research_uid}",
             cast_to=ResearchAggregateResponse,
+            options={"params": params} if params else None,
         )
 
     async def delete_market_research(self, research_uid: str) -> ResearchDeleteResponse:
@@ -683,6 +707,7 @@ class AsyncAnalysis(AsyncAPIResource):
         start_time: str | None = None,
         end_time: str | None = None,
         fuzzy: str | None = None,
+        result_content_fields: str | None = None,
         order_by: str | None = None,
         order_type: str | None = None,
         page: int | None = None,
@@ -697,6 +722,7 @@ class AsyncAnalysis(AsyncAPIResource):
                 "start_time": start_time,
                 "end_time": end_time,
                 "fuzzy": fuzzy,
+                "result_content_fields": result_content_fields,
                 "order_by": order_by,
                 "order_type": order_type,
                 "page": page,
